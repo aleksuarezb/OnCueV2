@@ -4,7 +4,7 @@
 // a new value here creates a brand new cache, forces waiting service workers
 // to activate immediately, and wipes every older cache so no device can get
 // stuck showing a stale build.
-const BUILD_ID = '2026-09-01T00-00-00';
+const BUILD_ID = '2026-09-01T21-00-00';
 const CACHE_NAME = 'oncue-cache-' + BUILD_ID;
 
 const APP_SHELL = [
