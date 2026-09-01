@@ -130,6 +130,69 @@
   body:not(.role-md) .md-only{ display:none !important; }
   .hidden{ display:none !important; }
 
+  /* ---------- landing ---------- */
+  .landing-wrap{
+    max-width:440px; margin:0 auto; width:100%;
+    padding:28px 20px 60px;
+    display:flex; flex-direction:column; gap:14px;
+  }
+  .landing-hero{
+    background:linear-gradient(135deg,#6a3fd0 0%,#a63bc4 55%,#e0518f 100%);
+    border-radius:18px; padding:28px 20px; text-align:center;
+    display:flex; flex-direction:column; align-items:center; gap:6px;
+  }
+  .landing-logo-mark{
+    width:64px; height:64px; border-radius:50%;
+    background:rgba(255,255,255,0.12);
+    display:flex; align-items:center; justify-content:center;
+    margin-bottom:6px;
+  }
+  .landing-title{ color:#fff; font-size:26px; font-weight:800; letter-spacing:0.01em; }
+  .landing-tagline{ color:rgba(255,255,255,0.85); font-size:13px; font-weight:600; }
+  .landing-question{
+    text-align:center; font-size:15px; font-weight:700; color:var(--text-dim);
+    margin:6px 0 0; text-transform:uppercase; letter-spacing:0.04em;
+  }
+  .role-cards{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .role-card{
+    background:var(--bg-card); border:2px solid var(--border); border-radius:12px;
+    padding:18px 10px; display:flex; flex-direction:column; align-items:center; gap:6px;
+    color:var(--text); text-align:center;
+  }
+  .role-card .role-icon{ font-size:28px; }
+  .role-card .role-name{ font-size:15px; font-weight:800; }
+  .role-card .role-desc{ font-size:11px; color:var(--text-dim); line-height:1.3; }
+  .role-card[data-role="md"].selected{ border-color:var(--accent); background:rgba(74,158,255,0.14); }
+  .role-card[data-role="viewer"].selected{ border-color:var(--success); background:rgba(61,220,132,0.16); }
+  .landing-passcode-wrap{ display:flex; }
+  .landing-passcode-wrap input{ width:100%; }
+  .landing-label{
+    font-size:11px; text-transform:uppercase; letter-spacing:0.05em;
+    color:var(--text-faint); margin-top:6px;
+  }
+  .landing-wide{ width:100%; }
+  .btn-lavender{ background:#e6defa; border-color:#e6defa; color:#3d2a72; }
+  .landing-continue{ padding:12px 14px; font-size:15px; }
+  .landing-help{ color:#ff7a72; }
+
+  .modal-overlay{
+    position:fixed; inset:0; background:rgba(0,0,0,0.6);
+    display:flex; align-items:center; justify-content:center;
+    padding:20px; z-index:200;
+  }
+  .modal-card{
+    background:var(--bg-card); border:1px solid var(--border); border-radius:14px;
+    padding:22px 20px; max-width:440px; width:100%; max-height:80vh; overflow-y:auto;
+    position:relative;
+  }
+  .modal-card h2{ margin:0 0 14px; font-size:18px; }
+  .modal-close{
+    position:absolute; top:10px; right:10px; background:none; border:none;
+    color:var(--text-dim); font-size:16px; width:30px; height:30px;
+  }
+  .help-list{ padding-left:18px; display:flex; flex-direction:column; gap:10px; font-size:13.5px; color:var(--text-dim); line-height:1.4; }
+  .help-list b{ color:var(--text); }
+
   /* ---------- library ---------- */
   .az-index{
     display:flex; flex-wrap:wrap; gap:4px;
@@ -317,8 +380,13 @@
 <body class="role-viewer">
 <div id="app">
   <header id="app-header">
-    <button class="logo" id="btn-logo" title="OnCue">
-      <span class="logo-mark">OC</span>
+    <button class="logo" id="btn-logo" title="Switch identity">
+      <span class="logo-mark">
+        <svg viewBox="0 0 48 48" width="18" height="18">
+          <circle cx="24" cy="24" r="19" fill="none" stroke="currentColor" stroke-width="5" stroke-dasharray="94 30" stroke-linecap="round" transform="rotate(-45 24 24)"/>
+          <circle cx="24" cy="24" r="6" fill="currentColor"/>
+        </svg>
+      </span>
       <span class="logo-word">OnCue</span>
     </button>
     <nav class="header-nav">
@@ -333,7 +401,65 @@
 
   <main id="app-main">
 
-    <section id="screen-library" class="screen active">
+    <section id="screen-landing" class="screen active">
+      <div class="landing-wrap">
+        <div class="landing-hero">
+          <div class="landing-logo-mark" aria-hidden="true">
+            <svg viewBox="0 0 48 48" width="44" height="44">
+              <circle cx="24" cy="24" r="19" fill="none" stroke="#ffffff" stroke-width="4.5" stroke-dasharray="94 30" stroke-linecap="round" transform="rotate(-45 24 24)"/>
+              <circle cx="24" cy="24" r="5.5" fill="#ffffff"/>
+            </svg>
+          </div>
+          <div class="landing-title">OnCue</div>
+          <div class="landing-tagline">Never Miss the Moment</div>
+        </div>
+
+        <h2 class="landing-question">Who are you today?</h2>
+        <div class="role-cards">
+          <button class="role-card" data-role="md">
+            <div class="role-icon">🎤</div>
+            <div class="role-name">MD</div>
+            <div class="role-desc">Musical Director — push songs &amp; manage sets</div>
+          </button>
+          <button class="role-card" data-role="viewer">
+            <div class="role-icon">👁</div>
+            <div class="role-name">Viewer</div>
+            <div class="role-desc">Receive songs from MD</div>
+          </button>
+        </div>
+
+        <div id="landing-passcode-wrap" class="landing-passcode-wrap hidden">
+          <input id="landing-passcode" type="password" class="text-input" placeholder="MD passcode" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+        </div>
+
+        <label class="landing-label">Load a setlist (optional)</label>
+        <select id="landing-setlist-select" class="text-input landing-wide">
+          <option value="">— No setlist, start fresh —</option>
+        </select>
+
+        <button id="btn-landing-manage-setlists" class="btn btn-lavender landing-wide">▶ Manage Setlists</button>
+        <button id="btn-landing-continue" class="btn btn-accent landing-wide landing-continue">Continue</button>
+        <button id="btn-landing-help" class="btn btn-ghost landing-wide landing-help">? Help &amp; User Guide</button>
+      </div>
+    </section>
+
+    <div id="help-modal" class="modal-overlay hidden">
+      <div class="modal-card">
+        <button id="help-close" class="modal-close">✕</button>
+        <h2>Help &amp; User Guide</h2>
+        <ol class="help-list">
+          <li><b>Pick your role.</b> MD can add songs, build setlists, and push the live chart to everyone. Viewer follows along automatically.</li>
+          <li><b>Add a song</b> (MD only): Library → "+ New Song". Enter a title, then add one or more chart versions — type the chart exactly as it should look on stage. A version named "Numbers" is shown by default.</li>
+          <li><b>Build a setlist</b> (MD only): Setlists → "+ New Setlist" → add songs from the library, reorder with the arrows.</li>
+          <li><b>Go live</b> (MD only): open a setlist and tap "Go Live" — every Viewer who's following jumps to that song automatically.</li>
+          <li><b>Navigate:</b> swipe left/right on the chart, or use the arrows on the right edge, to move through the setlist.</li>
+          <li><b>Chart modes:</b> tap the ☀︎ icon on the chart screen to switch between dark and light display.</li>
+          <li><b>Switch identity</b> anytime by tapping the OnCue logo in the header.</li>
+        </ol>
+      </div>
+    </div>
+
+    <section id="screen-library" class="screen">
       <div class="toolbar">
         <input id="search-input" type="search" placeholder="Search songs, artists, tags…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
         <button id="btn-new-song" class="btn btn-accent md-only">+ New Song</button>
@@ -758,8 +884,55 @@
   function showScreen(id){
     document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('active'); });
     document.getElementById(id).classList.add('active');
+    document.getElementById('app-header').classList.toggle('hidden', id === 'screen-landing');
     document.getElementById('nav-library').classList.toggle('active', id === 'screen-library');
     document.getElementById('nav-setlists').classList.toggle('active', id === 'screen-setlists' || id === 'screen-setlist-builder');
+  }
+
+  /* =========================================================
+     LANDING (role + optional setlist entry gate)
+  ========================================================= */
+  function renderLandingSetlistOptions(){
+    const sel = document.getElementById('landing-setlist-select');
+    const current = sel.value;
+    sel.innerHTML = '<option value="">— No setlist, start fresh —</option>';
+    setlistList().forEach(function(sl){
+      const opt = document.createElement('option');
+      opt.value = sl.id;
+      opt.textContent = sl.name || 'Untitled setlist';
+      sel.appendChild(opt);
+    });
+    sel.value = current;
+  }
+
+  function renderLanding(){
+    const stored = getStoredRole();
+    document.querySelectorAll('.role-card').forEach(function(c){
+      c.classList.toggle('selected', c.dataset.role === stored);
+    });
+    document.getElementById('landing-passcode-wrap').classList.toggle('hidden', stored !== 'md');
+    document.getElementById('landing-passcode').value = '';
+    renderLandingSetlistOptions();
+  }
+
+  function selectedLandingRole(){
+    const card = document.querySelector('.role-card.selected');
+    return card ? card.dataset.role : getStoredRole();
+  }
+
+  function commitRoleFromLanding(){
+    const role = selectedLandingRole();
+    if (role === 'md'){
+      const val = document.getElementById('landing-passcode').value;
+      if (val !== MD_PASSCODE){
+        toast('Incorrect passcode');
+        document.getElementById('landing-passcode').focus();
+        return false;
+      }
+    }
+    localStorage.setItem('oncue_role', role);
+    applyRole(role);
+    return true;
   }
 
   /* =========================================================
@@ -1371,6 +1544,7 @@
       state.setlists = setlists || {};
       if (document.getElementById('screen-setlists').classList.contains('active')) renderSetlists();
       if (document.getElementById('screen-setlist-builder').classList.contains('active')) renderSetlistBuilder();
+      if (document.getElementById('screen-landing').classList.contains('active')) renderLandingSetlistOptions();
       renderNavArrows();
     });
   }
@@ -1413,10 +1587,42 @@
      WIRE UP UI
   ========================================================= */
   function wireUI(){
-    document.getElementById('btn-logo').addEventListener('click', function(){ showScreen('screen-library'); renderLibrary(); });
+    document.getElementById('btn-logo').addEventListener('click', function(){ showScreen('screen-landing'); renderLanding(); });
     document.getElementById('nav-library').addEventListener('click', function(){ showScreen('screen-library'); renderLibrary(); });
     document.getElementById('nav-setlists').addEventListener('click', function(){ showScreen('screen-setlists'); renderSetlists(); });
     document.getElementById('role-btn').addEventListener('click', toggleRole);
+
+    document.querySelectorAll('.role-card').forEach(function(card){
+      card.addEventListener('click', function(){
+        document.querySelectorAll('.role-card').forEach(function(c){ c.classList.remove('selected'); });
+        card.classList.add('selected');
+        document.getElementById('landing-passcode-wrap').classList.toggle('hidden', card.dataset.role !== 'md');
+        if (card.dataset.role === 'md') document.getElementById('landing-passcode').focus();
+      });
+    });
+    document.getElementById('btn-landing-continue').addEventListener('click', function(){
+      if (!commitRoleFromLanding()) return;
+      const setlistId = document.getElementById('landing-setlist-select').value;
+      if (setlistId) openSetlistBuilder(setlistId);
+      else { showScreen('screen-library'); renderLibrary(); }
+    });
+    document.getElementById('btn-landing-manage-setlists').addEventListener('click', function(){
+      if (!commitRoleFromLanding()) return;
+      showScreen('screen-setlists');
+      renderSetlists();
+    });
+    document.getElementById('btn-landing-help').addEventListener('click', function(){
+      document.getElementById('help-modal').classList.remove('hidden');
+    });
+    document.getElementById('help-close').addEventListener('click', function(){
+      document.getElementById('help-modal').classList.add('hidden');
+    });
+    document.getElementById('help-modal').addEventListener('click', function(e){
+      if (e.target.id === 'help-modal') e.currentTarget.classList.add('hidden');
+    });
+    document.getElementById('landing-passcode').addEventListener('keydown', function(e){
+      if (e.key === 'Enter') document.getElementById('btn-landing-continue').click();
+    });
 
     document.getElementById('search-input').addEventListener('input', renderLibrary);
     document.getElementById('btn-new-song').addEventListener('click', function(){ openEditor(null); });
@@ -1477,6 +1683,9 @@
     wireSetlistsWatcher();
     wireLiveWatcher();
     wireConnectionWatcher();
+
+    showScreen('screen-landing');
+    renderLanding();
 
     if (Store.mode() === 'local'){
       toast('Firebase not configured — running local-only. See README.md.');

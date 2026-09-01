@@ -41,7 +41,7 @@ If `FIREBASE_CONFIG` ever gets reset to placeholder values (e.g. spinning up yet
 - **MD (Musical Director)** — full edit access: manage the song library, build/edit setlists, and push the "now playing" song + chart version to every connected device.
 - **Viewer** — read-only. Automatically follows the MD's live pushes.
 
-Switching a device to MD mode is gated by `MD_PASSCODE` (a UI convenience, not real security — the database itself has open rules). Tap the role pill in the header to switch; downgrading to Viewer needs no passcode.
+The app opens on a **"Who are you today?"** landing screen where you pick MD or Viewer (and optionally jump straight into an existing setlist). Switching to MD is gated by `MD_PASSCODE` — default `"oncue"`, change it near the top of the `<script>` block in `index.html`. This is a UI convenience, not real security — the database itself has open rules, matching the original app. Downgrading to Viewer needs no passcode. Tap the OnCue logo in the header any time to return to this screen and switch identity or load a different setlist.
 
 ## Chart data model
 
