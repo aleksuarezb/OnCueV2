@@ -11,26 +11,24 @@ A single-file Progressive Web App for a worship team's chord charts, built for l
 
 Deployed via GitHub Pages from the `gh-pages` branch.
 
-## One-time setup: Firebase
+## Firebase setup (already done for this repo)
 
-This app needs its **own, brand-new Firebase project** — do not reuse an existing OnCue project, so this rebuild can be developed and tested without any risk to another app's data.
+This app uses its **own, brand-new Firebase project** (`oncuev2`) — not the original OnCue's — so this rebuild can be developed and tested without any risk to another app's data.
 
-1. Go to the [Firebase console](https://console.firebase.google.com/) and create a new project.
-2. In the project, add a **Web app** (the `</>` icon) to get a config object.
-3. Enable **Realtime Database** (Build → Realtime Database → Create Database). Start in test mode, or set the rules explicitly to open read/write (matching the original app):
-   ```json
-   {
-     "rules": {
-       ".read": true,
-       ".write": true
-     }
-   }
-   ```
-   These rules are intentionally open — there's no per-user auth model here, just a soft passcode gate in the app UI (see below). Don't put this database somewhere you'd mind being publicly readable/writable.
-4. Copy the six config values (`apiKey`, `authDomain`, `databaseURL`, `projectId`, `storageBucket`, `messagingSenderId`, `appId`) into the `FIREBASE_CONFIG` object near the top of the `<script>` block in `index.html`.
-5. Optionally change `MD_PASSCODE` (also near the top of the script) from the default `"oncue"`.
+- `FIREBASE_CONFIG` near the top of the `<script>` block in `index.html` is already filled in with the `oncuev2` project's real config.
+- The Realtime Database's rules are set to open read/write:
+  ```json
+  {
+    "rules": {
+      ".read": true,
+      ".write": true
+    }
+  }
+  ```
+  These rules are intentionally open — there's no per-user auth model here, just a soft passcode gate in the app UI (see below). Don't put this database somewhere you'd mind being publicly readable/writable.
+- `MD_PASSCODE` (also near the top of the script) defaults to `"oncue"` — change it if you like.
 
-Until `FIREBASE_CONFIG` is filled in, the app runs in a **local-only fallback mode** (data lives in that browser's `localStorage`, no cross-device sync) so you can build/demo the UI immediately. A toast on load tells you when this fallback is active, and the sync-status dot in the header turns amber.
+If `FIREBASE_CONFIG` ever gets reset to placeholder values (e.g. spinning up yet another project later), the app falls back to a **local-only mode** (data lives in that browser's `localStorage`, no cross-device sync) so the UI is still usable while re-configuring. A toast on load tells you when this fallback is active, and the sync-status dot in the header turns amber.
 
 ## Deploying to GitHub Pages
 
@@ -96,6 +94,6 @@ Per the project brief, to avoid re-introducing the old app's alignment bugs and 
 - [x] Paste from a real SongSelect PDF / webpage, save, and copy the text back out — spacing should be pixel/character-identical (verified programmatically: NBSP and tab characters are normalized to plain spaces on save without altering column position).
 - [ ] View on an actual iPad, portrait and landscape — confirm two-column layout and no horizontal scroll for normal-length lines (columns collapse to one below ~600px width; verify visually on-device).
 - [x] Toggle chart light mode with the OS in dark mode — verified the toggle is driven purely by an in-app CSS class, independent of `prefers-color-scheme`, and text stays legible in both directions.
-- [x] MD push / Viewer read-only sync, and swipe/arrow navigation not fighting with it — verified end-to-end with an automated Firebase-fallback-store test: MD navigation updates the live pointer, a following Viewer updates automatically, and a Viewer that navigates independently detaches without affecting the MD.
+- [ ] MD push / Viewer read-only sync against the real `oncuev2` Firebase project, and swipe/arrow navigation not fighting with it — the sync *logic* was verified end-to-end (MD navigation updates the live pointer, a following Viewer updates automatically, a Viewer that navigates independently detaches without affecting the MD) with an automated test against the local-storage fallback store, since this sandbox's network policy blocks outbound calls to Firebase. Still needs a real check with two devices/tabs pointed at the live database.
 
-The two `[x]` items above were verified with a headless-browser smoke test against the local-storage fallback store (this sandbox has no live Firebase project); the on-device iPad check still needs a physical device.
+The chart-light-mode and whitespace-normalization checks above were verified with a headless-browser smoke test; the on-device iPad check and the live-Firebase sync check still need a physical device / two real browser sessions.
