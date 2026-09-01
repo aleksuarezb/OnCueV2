@@ -1,0 +1,1498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<title>OnCue</title>
+<meta name="theme-color" content="#0a0a0c">
+<meta name="description" content="Live chord charts for worship teams">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="OnCue">
+<style>
+  :root{
+    --bg:#0a0a0c;
+    --bg-elevated:#141416;
+    --bg-card:#1c1c1f;
+    --bg-input:#19191c;
+    --text:#f2ece2;
+    --text-dim:#a39c92;
+    --text-faint:#6f6a63;
+    --accent:#4a9eff;
+    --accent-dim:#2f6fbf;
+    --border:#2a2a2e;
+    --danger:#ff5f56;
+    --success:#3ddc84;
+    --live:#ff3b30;
+    --radius:10px;
+    color-scheme: dark;
+  }
+
+  *{ box-sizing:border-box; -webkit-tap-highlight-color: transparent; }
+  html,body{ height:100%; }
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    overflow:hidden;
+  }
+  button, input, select, textarea{ font-family:inherit; }
+  button{ cursor:pointer; }
+
+  #app{ height:100vh; height:100dvh; display:flex; flex-direction:column; }
+
+  /* ---------- header ---------- */
+  #app-header{
+    flex:0 0 auto;
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:8px 12px;
+    padding-top: calc(8px + env(safe-area-inset-top));
+    background:var(--bg-elevated);
+    border-bottom:1px solid var(--border);
+    z-index:30;
+  }
+  .logo{
+    display:flex; align-items:center; gap:8px;
+    background:none; border:none; color:var(--text); padding:2px 4px;
+  }
+  .logo-mark{
+    width:30px; height:30px; border-radius:8px;
+    background:var(--bg-card);
+    border:1px solid var(--border);
+    display:flex; align-items:center; justify-content:center;
+    font-weight:700; font-size:13px; color:var(--accent);
+  }
+  .logo-word{ font-weight:700; font-size:16px; letter-spacing:0.2px; }
+  .header-nav{ display:flex; gap:4px; }
+  .header-nav button{
+    background:none; border:none; color:var(--text-dim);
+    font-size:14px; font-weight:600; padding:8px 10px; border-radius:8px;
+  }
+  .header-nav button.active{ color:var(--text); background:var(--bg-card); }
+  .header-spacer{ flex:1; }
+  .live-pill-header{
+    display:flex; align-items:center; gap:6px;
+    background:rgba(255,59,48,0.15); color:var(--live);
+    border:1px solid rgba(255,59,48,0.4);
+    border-radius:20px; padding:6px 12px; font-size:12px; font-weight:700;
+    border-width:1px; border-style:solid;
+  }
+  .sync-dot{ width:8px; height:8px; border-radius:50%; background:var(--text-faint); flex:0 0 auto; }
+  .sync-dot.ok{ background:var(--success); }
+  .sync-dot.local{ background:#e0b64c; }
+  .sync-dot.off{ background:var(--danger); }
+  .role-btn{
+    background:var(--bg-card); border:1px solid var(--border); color:var(--text);
+    font-size:12px; font-weight:700; padding:7px 12px; border-radius:20px;
+  }
+  .role-btn.is-md{ color:var(--accent); border-color:var(--accent-dim); }
+
+  /* ---------- main / screens ---------- */
+  #app-main{ flex:1 1 auto; min-height:0; position:relative; }
+  .screen{
+    position:absolute; inset:0;
+    display:none;
+    flex-direction:column;
+    overflow-y:auto;
+    -webkit-overflow-scrolling:touch;
+  }
+  .screen.active{ display:flex; }
+
+  .toolbar{
+    display:flex; align-items:center; gap:10px;
+    padding:14px 16px 8px;
+    flex:0 0 auto;
+  }
+  .toolbar h2{ margin:0; font-size:19px; flex:1; }
+  input[type="search"], input[type="text"], .text-input{
+    background:var(--bg-input); border:1px solid var(--border); color:var(--text);
+    border-radius:8px; padding:10px 12px; font-size:15px; flex:1; min-width:0;
+  }
+  input::placeholder{ color:var(--text-faint); }
+
+  .btn{
+    border:1px solid var(--border); background:var(--bg-card); color:var(--text);
+    border-radius:8px; padding:9px 14px; font-size:14px; font-weight:600; white-space:nowrap;
+  }
+  .btn-accent{ background:var(--accent); border-color:var(--accent); color:#08131f; }
+  .btn-danger{ background:transparent; border-color:var(--danger); color:var(--danger); }
+  .btn-ghost{ background:transparent; border-color:transparent; color:var(--text-dim); }
+  .btn-live{ background:var(--live); border-color:var(--live); color:#fff; }
+  .btn-live.is-active{ background:#fff; color:var(--live); }
+  .btn:disabled{ opacity:0.35; }
+
+  body:not(.role-md) .md-only{ display:none !important; }
+  .hidden{ display:none !important; }
+
+  /* ---------- library ---------- */
+  .az-index{
+    display:flex; flex-wrap:wrap; gap:4px;
+    padding:6px 16px; flex:0 0 auto;
+  }
+  .az-index button{
+    background:none; border:none; color:var(--text-faint);
+    font-size:11px; font-weight:700; padding:3px 5px;
+  }
+  .az-index button.has-songs{ color:var(--accent); }
+
+  .live-banner{
+    margin:0 16px 8px; padding:10px 14px; border-radius:10px;
+    background:rgba(255,59,48,0.12); border:1px solid rgba(255,59,48,0.4);
+    color:var(--text); display:flex; align-items:center; gap:10px; cursor:pointer;
+  }
+  .live-banner .dot{ width:9px; height:9px; border-radius:50%; background:var(--live); flex:0 0 auto; }
+  .live-banner b{ color:var(--live); }
+
+  .song-grid{
+    display:grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap:10px;
+    padding:8px 16px 24px;
+  }
+  .song-card{
+    background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius);
+    padding:12px 14px; text-align:left; color:var(--text);
+    display:flex; flex-direction:column; gap:4px; position:relative;
+  }
+  .song-card .title{ font-size:15px; font-weight:700; }
+  .song-card .artist{ font-size:13px; color:var(--text-dim); }
+  .song-card .tags{ display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
+  .song-card .tag{ font-size:10px; color:var(--text-faint); background:var(--bg-elevated); border-radius:5px; padding:2px 6px; }
+  .song-card .edit-fab{
+    position:absolute; top:8px; right:8px;
+    background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-dim);
+    border-radius:7px; width:28px; height:28px; font-size:13px;
+  }
+  .empty-state{ padding:40px 20px; text-align:center; color:var(--text-faint); }
+
+  /* ---------- editor ---------- */
+  .editor-topbar, .chart-topbar{
+    flex:0 0 auto; display:flex; align-items:center; gap:8px;
+    padding:10px 12px; border-bottom:1px solid var(--border);
+  }
+  .editor-actions{ margin-left:auto; display:flex; gap:8px; }
+  .editor-fields{ display:flex; flex-direction:column; gap:8px; padding:14px 16px; flex:0 0 auto; }
+  .version-tabs{ display:flex; gap:6px; padding:0 16px 10px; flex-wrap:wrap; flex:0 0 auto; }
+  .version-tab{
+    background:var(--bg-card); border:1px solid var(--border); color:var(--text-dim);
+    border-radius:16px; padding:6px 12px; font-size:13px; font-weight:600;
+    display:flex; align-items:center; gap:6px;
+  }
+  .version-tab.active{ color:var(--text); border-color:var(--accent); background:rgba(74,158,255,0.12); }
+  .version-tab .v-remove{ color:var(--text-faint); font-weight:700; }
+  .version-tab-add{ background:none; border:1px dashed var(--border); color:var(--text-dim); border-radius:16px; padding:6px 12px; font-size:13px; }
+
+  .chart-textarea{
+    flex:1 1 auto; margin:0 16px 16px; border-radius:10px;
+    background:var(--bg-input); border:1px solid var(--border); color:var(--text);
+    padding:14px; font-size:15px; line-height:1.5; resize:none;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Roboto Mono", "Liberation Mono", "Courier New", monospace;
+    font-variant-ligatures:none; font-kerning:none; white-space:pre;
+    min-height:200px;
+  }
+
+  /* ---------- setlists ---------- */
+  .setlist-list{ padding:8px 16px 24px; display:flex; flex-direction:column; gap:8px; }
+  .setlist-row{
+    background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius);
+    padding:12px 14px; display:flex; align-items:center; gap:10px; color:var(--text);
+    text-align:left;
+  }
+  .setlist-row .name{ font-weight:700; font-size:15px; flex:1; }
+  .setlist-row .count{ color:var(--text-faint); font-size:12px; }
+  .setlist-row .live-dot{ width:8px; height:8px; border-radius:50%; background:var(--live); }
+
+  .builder-body{ display:flex; flex-direction:column; gap:0; flex:1; min-height:0; }
+  .builder-col{ padding:0 16px 20px; }
+  .builder-col h3{ font-size:13px; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-faint); margin:10px 0 8px; }
+  .setlist-songs{ display:flex; flex-direction:column; gap:6px; }
+  .setlist-song-row{
+    display:flex; align-items:center; gap:8px;
+    background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:9px 10px;
+  }
+  .setlist-song-row .idx{ color:var(--text-faint); font-size:12px; width:20px; }
+  .setlist-song-row .info{ flex:1; min-width:0; }
+  .setlist-song-row .info .t{ font-size:14px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .setlist-song-row .info .a{ font-size:12px; color:var(--text-dim); }
+  .setlist-song-row .row-actions{ display:flex; gap:4px; }
+  .setlist-song-row button{ background:var(--bg-elevated); border:1px solid var(--border); color:var(--text); border-radius:6px; width:28px; height:28px; font-size:14px; }
+  #setlist-name-input{ margin:0 16px 6px; }
+  .song-picker{ display:flex; flex-direction:column; gap:6px; max-height:260px; overflow-y:auto; }
+  .song-picker .pick-row{
+    display:flex; align-items:center; gap:8px; background:var(--bg-card);
+    border:1px solid var(--border); border-radius:8px; padding:8px 10px; text-align:left; color:var(--text);
+  }
+  .song-picker .pick-row .info{ flex:1; min-width:0; }
+  .song-picker .pick-row .t{ font-size:14px; font-weight:600; }
+  .song-picker .pick-row .a{ font-size:12px; color:var(--text-dim); }
+
+  @media (min-width:760px){
+    .builder-body{ flex-direction:row; }
+    .builder-col{ flex:1; min-width:0; }
+    .builder-col + .builder-col{ border-left:1px solid var(--border); }
+  }
+
+  /* ---------- chart view ---------- */
+  #screen-chart{ background:var(--chart-bg, var(--bg)); }
+  #screen-chart{
+    --chart-bg: var(--bg);
+    --chart-text: var(--text);
+    --chart-text-dim: var(--text-dim);
+    --chart-chord: var(--accent);
+    --chart-section: #d8b559;
+    --chart-border: var(--border);
+    --chart-panel: var(--bg-elevated);
+  }
+  #screen-chart.chart-light{
+    --chart-bg:#fbf7ec;
+    --chart-text:#18140d;
+    --chart-text-dim:#5b5344;
+    --chart-chord:#0b5fd6;
+    --chart-section:#8a5a00;
+    --chart-border:#e3dac2;
+    --chart-panel:#f2ecdd;
+  }
+  #screen-chart{ background:var(--chart-bg); color:var(--chart-text); }
+  .chart-topbar{ background:var(--chart-panel); border-bottom:1px solid var(--chart-border); color:var(--chart-text); }
+  .chart-title-block{ flex:1; min-width:0; }
+  .chart-title{ font-size:16px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .chart-artist{ font-size:12px; color:var(--chart-text-dim); }
+  .chart-controls{ display:flex; align-items:center; gap:6px; }
+  .version-select{
+    background:var(--chart-panel); color:var(--chart-text); border:1px solid var(--chart-border);
+    border-radius:8px; padding:8px 10px; font-size:13px; font-weight:600;
+  }
+  #screen-chart .btn-ghost{ color:var(--chart-text-dim); border:1px solid var(--chart-border); }
+
+  .follow-pill{
+    position:absolute; top:56px; left:50%; transform:translateX(-50%);
+    background:var(--live); color:#fff; border-radius:20px; padding:8px 16px;
+    font-size:13px; font-weight:700; z-index:15; border:none;
+  }
+
+  .chart-render{ flex:1; padding:18px 22px 60px; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+  .chart-columns{ columns:2; column-gap:2.4rem; }
+  @media (max-width:600px){ .chart-columns{ columns:1; } }
+  .chart-section{ break-inside:avoid; -webkit-column-break-inside:avoid; margin-bottom:1.4rem; }
+  .section-header{
+    font-weight:700; color:var(--chart-section);
+    margin-bottom:0.3rem; font-size:0.95em; letter-spacing:0.02em;
+  }
+  .chart-line{
+    display:grid; grid-auto-flow:column; grid-auto-columns:1ch;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Roboto Mono", "Liberation Mono", "Courier New", monospace;
+    font-variant-ligatures:none; font-kerning:none;
+    font-size:15px; line-height:1.55; white-space:pre;
+  }
+  .chart-line .ch{ min-width:0; overflow:hidden; white-space:pre; }
+  .chart-line.chord-line{ color:var(--chart-chord); font-weight:700; }
+  .chart-line.lyric-line{ color:var(--chart-text); }
+  .chart-line.blank{ min-height:1.55em; }
+  .chart-empty{ color:var(--chart-text-dim); padding:30px 0; text-align:center; }
+
+  .nav-arrow{
+    position:fixed; right:14px; width:48px; height:48px; border-radius:50%;
+    background:rgba(120,120,130,0.18); border:1px solid var(--chart-border);
+    color:var(--chart-text); font-size:22px; display:flex; align-items:center; justify-content:center;
+    z-index:20; backdrop-filter: blur(4px);
+  }
+  .nav-prev{ top:calc(50% - 62px); }
+  .nav-next{ top:calc(50% + 14px); }
+
+  .toast{
+    position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
+    background:var(--bg-card); border:1px solid var(--border); color:var(--text);
+    padding:10px 18px; border-radius:20px; font-size:13px; z-index:100;
+    opacity:0; pointer-events:none; transition:opacity 0.2s;
+  }
+  .toast.show{ opacity:1; }
+</style>
+</head>
+<body class="role-viewer">
+<div id="app">
+  <header id="app-header">
+    <button class="logo" id="btn-logo" title="OnCue">
+      <span class="logo-mark">OC</span>
+      <span class="logo-word">OnCue</span>
+    </button>
+    <nav class="header-nav">
+      <button id="nav-library" class="active">Library</button>
+      <button id="nav-setlists">Setlists</button>
+    </nav>
+    <div class="header-spacer"></div>
+    <div id="header-live-pill" class="live-pill-header hidden">● LIVE</div>
+    <span id="sync-dot" class="sync-dot" title="Sync status"></span>
+    <button id="role-btn" class="role-btn">Viewer</button>
+  </header>
+
+  <main id="app-main">
+
+    <section id="screen-library" class="screen active">
+      <div class="toolbar">
+        <input id="search-input" type="search" placeholder="Search songs, artists, tags…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+        <button id="btn-new-song" class="btn btn-accent md-only">+ New Song</button>
+      </div>
+      <div id="live-banner" class="live-banner hidden"></div>
+      <div class="az-index" id="az-index"></div>
+      <div id="song-grid" class="song-grid"></div>
+    </section>
+
+    <section id="screen-editor" class="screen">
+      <div class="editor-topbar">
+        <button id="btn-editor-close" class="btn btn-ghost">← Back</button>
+        <div class="editor-actions">
+          <button id="btn-delete-song" class="btn btn-danger">Delete</button>
+          <button id="btn-save-song" class="btn btn-accent">Save</button>
+        </div>
+      </div>
+      <div class="editor-fields">
+        <input id="edit-title" class="text-input" placeholder="Title" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+        <input id="edit-artist" class="text-input" placeholder="Artist" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+        <input id="edit-tags" class="text-input" placeholder="Tags (comma separated)" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+      </div>
+      <div class="version-tabs" id="version-tabs"></div>
+      <textarea id="edit-textarea" class="chart-textarea" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Type or paste the chart exactly as it should appear on stage…"></textarea>
+    </section>
+
+    <section id="screen-setlists" class="screen">
+      <div class="toolbar">
+        <h2>Setlists</h2>
+        <button id="btn-new-setlist" class="btn btn-accent md-only">+ New Setlist</button>
+      </div>
+      <div id="setlist-list" class="setlist-list"></div>
+    </section>
+
+    <section id="screen-setlist-builder" class="screen">
+      <div class="editor-topbar">
+        <button id="btn-builder-close" class="btn btn-ghost">← Back</button>
+        <div class="editor-actions md-only">
+          <button id="btn-delete-setlist" class="btn btn-danger">Delete</button>
+          <button id="btn-go-live" class="btn btn-live">🔴 Go Live</button>
+        </div>
+      </div>
+      <input id="setlist-name-input" class="text-input" placeholder="Setlist name" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+      <div class="builder-body">
+        <div class="builder-col">
+          <h3>In this setlist</h3>
+          <div id="setlist-songs" class="setlist-songs"></div>
+        </div>
+        <div class="builder-col md-only">
+          <h3>Add from library</h3>
+          <input id="builder-search" class="text-input" placeholder="Search…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+          <div id="builder-picker" class="song-picker"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="screen-chart" class="screen">
+      <div class="chart-topbar">
+        <button id="btn-chart-close" class="btn btn-ghost">← Back</button>
+        <div class="chart-title-block">
+          <div id="chart-title" class="chart-title"></div>
+          <div id="chart-artist" class="chart-artist"></div>
+        </div>
+        <div class="chart-controls">
+          <select id="version-select" class="version-select"></select>
+          <button id="btn-light-toggle" class="btn btn-ghost" title="Toggle chart light mode">☀︎</button>
+          <button id="btn-live-toggle" class="btn btn-live md-only hidden">🔴 Go Live</button>
+        </div>
+      </div>
+      <button id="follow-pill" class="follow-pill hidden"></button>
+      <div id="chart-render" class="chart-render"></div>
+      <button id="nav-prev" class="nav-arrow nav-prev hidden">‹</button>
+      <button id="nav-next" class="nav-arrow nav-next hidden">›</button>
+    </section>
+
+  </main>
+</div>
+<div id="toast" class="toast"></div>
+
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-database-compat.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  /* =========================================================
+     CONFIG
+     Replace with the credentials of a NEW Firebase project
+     (not the original OnCue's). Realtime Database, open rules.
+     See README.md for step-by-step setup.
+  ========================================================= */
+  const FIREBASE_CONFIG = {
+    apiKey: "REPLACE_ME",
+    authDomain: "REPLACE_ME.firebaseapp.com",
+    databaseURL: "https://REPLACE_ME-default-rtdb.firebaseio.com",
+    projectId: "REPLACE_ME",
+    storageBucket: "REPLACE_ME.appspot.com",
+    messagingSenderId: "REPLACE_ME",
+    appId: "REPLACE_ME"
+  };
+
+  // Soft gate for switching a device into MD mode. The database itself has
+  // open read/write rules (matching the original app), so this is only a
+  // convenience prompt, not real access control. Change it if you like.
+  const MD_PASSCODE = "oncue";
+
+  /* =========================================================
+     STORE — a tiny path-based data layer with two backends:
+     Firebase Realtime Database when FIREBASE_CONFIG is filled
+     in, otherwise a localStorage-backed fallback so the app is
+     fully usable (single device) before Firebase is configured,
+     and so recently-seen data still renders offline.
+  ========================================================= */
+  const Store = (function(){
+    let mode = 'local';
+    let db = null;
+    const localListeners = {}; // path -> [cb]
+
+    function rootGet(){
+      try { return JSON.parse(localStorage.getItem('oncue_db')) || {}; }
+      catch(e){ return {}; }
+    }
+    function rootSet(root){
+      localStorage.setItem('oncue_db', JSON.stringify(root));
+    }
+    function getPath(root, path){
+      if (!path) return root;
+      return path.split('/').filter(Boolean).reduce(function(acc,k){
+        return (acc && typeof acc === 'object') ? acc[k] : undefined;
+      }, root);
+    }
+    function setPath(root, path, value){
+      const parts = path.split('/').filter(Boolean);
+      if (!parts.length) return value;
+      let obj = root;
+      for (let i=0;i<parts.length-1;i++){
+        const k = parts[i];
+        if (typeof obj[k] !== 'object' || obj[k] === null) obj[k] = {};
+        obj = obj[k];
+      }
+      const last = parts[parts.length-1];
+      if (value === null || value === undefined) delete obj[last];
+      else obj[last] = value;
+      return root;
+    }
+    function notify(path){
+      Object.keys(localListeners).forEach(function(watched){
+        if (watched === '' || path === watched || path.indexOf(watched + '/') === 0 || watched.indexOf(path + '/') === 0){
+          const val = getPath(rootGet(), watched);
+          localListeners[watched].forEach(function(cb){ cb(val); });
+        }
+      });
+    }
+
+    function init(){
+      const cfgOk = FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.apiKey.indexOf('REPLACE_ME') === -1;
+      if (cfgOk && window.firebase){
+        try{
+          firebase.initializeApp(FIREBASE_CONFIG);
+          db = firebase.database();
+          mode = 'firebase';
+        } catch(e){
+          console.error('Firebase init failed, using local fallback store', e);
+          mode = 'local';
+        }
+      } else {
+        mode = 'local';
+      }
+      return mode;
+    }
+
+    function watch(path, cb){
+      if (mode === 'firebase'){
+        const ref = db.ref(path);
+        const handler = function(snap){ cb(snap.val()); };
+        ref.on('value', handler);
+        return function(){ ref.off('value', handler); };
+      }
+      localListeners[path] = localListeners[path] || [];
+      localListeners[path].push(cb);
+      cb(getPath(rootGet(), path));
+      return function(){
+        localListeners[path] = (localListeners[path] || []).filter(function(f){ return f !== cb; });
+      };
+    }
+
+    function watchConnection(cb){
+      if (mode === 'firebase'){
+        const ref = db.ref('.info/connected');
+        const handler = function(snap){ cb(!!snap.val()); };
+        ref.on('value', handler);
+        return function(){ ref.off('value', handler); };
+      }
+      cb(true);
+      return function(){};
+    }
+
+    function set(path, value){
+      if (mode === 'firebase') return db.ref(path).set(value);
+      const root = rootGet();
+      setPath(root, path, value);
+      rootSet(root);
+      notify(path);
+      return Promise.resolve();
+    }
+
+    function push(path, value){
+      if (mode === 'firebase'){
+        const ref = db.ref(path).push();
+        ref.set(value);
+        return ref.key;
+      }
+      const key = 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+      const root = rootGet();
+      const cur = getPath(root, path) || {};
+      cur[key] = value;
+      setPath(root, path, cur);
+      rootSet(root);
+      notify(path);
+      return key;
+    }
+
+    function remove(path){
+      return set(path, null);
+    }
+
+    return {
+      init: init,
+      watch: watch,
+      watchConnection: watchConnection,
+      set: set,
+      push: push,
+      remove: remove,
+      mode: function(){ return mode; }
+    };
+  })();
+
+  /* =========================================================
+     UTILITIES
+  ========================================================= */
+  function genId(){
+    return 'id' + Date.now().toString(36) + Math.random().toString(36).slice(2,8);
+  }
+
+  function normalizeWhitespace(text){
+    // Collapse anything whitespace-like (NBSP, tabs, etc.) except newlines
+    // into a plain ASCII space, so saved text is portable and renders the
+    // same everywhere, not just in this app's own renderer.
+    return (text || '').replace(/[^\S\n]/g, ' ');
+  }
+
+  function escapeHtml(s){
+    return (s || '').replace(/[&<>"']/g, function(c){
+      return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c];
+    });
+  }
+
+  function orderedVersions(song){
+    const versions = (song && song.versions) || {};
+    return Object.keys(versions)
+      .map(function(id){ return Object.assign({ id: id }, versions[id]); })
+      .sort(function(a,b){ return (a.order||0) - (b.order||0); });
+  }
+
+  function defaultVersionId(song){
+    const list = orderedVersions(song);
+    if (!list.length) return null;
+    const numbers = list.find(function(v){ return (v.label||'').trim().toLowerCase() === 'numbers'; });
+    return numbers ? numbers.id : list[0].id;
+  }
+
+  const CHORD_TOKEN = /^[\(\[]?[A-G](#|b)?(maj|min|m|dim|aug|sus[24]?|add)?[0-9]*(\/[A-G](#|b)?)?[\)\]]?$/i;
+  const NUMBER_TOKEN = /^[\(\[]?[1-7](#|b)?(maj|min|m|dim|aug|sus[24]?|add)?[0-9]*(\/[1-7])?[\)\]]?$/i;
+  const MISC_TOKEN = /^(N\.?C\.?|x[0-9]+|%|\/{1,4}|-{1,4}|—+|\|+|\.{2,})$/i;
+
+  function isChordLine(line){
+    const trimmed = line.trim();
+    if (!trimmed) return false;
+    const tokens = trimmed.split(/\s+/);
+    return tokens.every(function(t){
+      return CHORD_TOKEN.test(t) || NUMBER_TOKEN.test(t) || MISC_TOKEN.test(t);
+    });
+  }
+
+  function isSectionHeader(line){
+    return /^\s*\[[^\]]+\]\s*$/.test(line);
+  }
+
+  function splitSections(text){
+    const lines = (text || '').split('\n');
+    const sections = [];
+    let current = { header: null, lines: [] };
+    let started = false;
+    lines.forEach(function(line){
+      if (isSectionHeader(line)){
+        if (started) sections.push(current);
+        current = { header: line.trim(), lines: [] };
+        started = true;
+      } else {
+        current.lines.push(line);
+        started = true;
+      }
+    });
+    if (started) sections.push(current);
+    return sections;
+  }
+
+  function renderLineEl(line, cls){
+    const div = document.createElement('div');
+    div.className = 'chart-line ' + cls;
+    Array.from(line).forEach(function(ch){
+      const span = document.createElement('span');
+      span.className = 'ch';
+      span.textContent = ch;
+      div.appendChild(span);
+    });
+    return div;
+  }
+
+  function renderChart(container, text){
+    container.innerHTML = '';
+    const sections = splitSections(text || '');
+    if (!sections.length){
+      const empty = document.createElement('div');
+      empty.className = 'chart-empty';
+      empty.textContent = 'No chart text yet.';
+      container.appendChild(empty);
+      return;
+    }
+    const wrap = document.createElement('div');
+    wrap.className = 'chart-columns';
+    sections.forEach(function(sec){
+      const block = document.createElement('div');
+      block.className = 'chart-section';
+      if (sec.header){
+        const h = document.createElement('div');
+        h.className = 'chart-line section-header';
+        h.textContent = sec.header;
+        block.appendChild(h);
+      }
+      sec.lines.forEach(function(line){
+        if (line.trim() === ''){
+          const b = document.createElement('div');
+          b.className = 'chart-line blank';
+          block.appendChild(b);
+        } else {
+          const cls = isChordLine(line) ? 'chord-line' : 'lyric-line';
+          block.appendChild(renderLineEl(line, cls));
+        }
+      });
+      wrap.appendChild(block);
+    });
+    container.appendChild(wrap);
+  }
+
+  function toast(msg){
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function(){ el.classList.remove('show'); }, 1800);
+  }
+
+  /* =========================================================
+     STATE
+  ========================================================= */
+  const state = {
+    role: 'viewer',
+    songs: {},
+    setlists: {},
+    live: null,
+    editingSongId: null,
+    editingVersionId: null,
+    editingSongDraft: null,
+    editingSetlistId: null,
+    chart: {
+      songId: null,
+      versionId: null,
+      setlistId: null,
+      index: null,
+      following: true,
+      chartLight: false
+    }
+  };
+
+  /* =========================================================
+     ROLE
+  ========================================================= */
+  function getStoredRole(){
+    return localStorage.getItem('oncue_role') === 'md' ? 'md' : 'viewer';
+  }
+  function applyRole(role){
+    state.role = role;
+    document.body.classList.toggle('role-md', role === 'md');
+    document.body.classList.toggle('role-viewer', role !== 'md');
+    document.getElementById('role-btn').textContent = role === 'md' ? 'MD' : 'Viewer';
+    document.getElementById('role-btn').classList.toggle('is-md', role === 'md');
+    renderLibrary();
+    renderChartControls();
+  }
+  function toggleRole(){
+    if (state.role === 'md'){
+      localStorage.setItem('oncue_role', 'viewer');
+      applyRole('viewer');
+      toast('Switched to Viewer');
+      return;
+    }
+    const pass = window.prompt('Enter MD passcode:');
+    if (pass === null) return;
+    if (pass === MD_PASSCODE){
+      localStorage.setItem('oncue_role', 'md');
+      applyRole('md');
+      toast('Switched to MD');
+    } else {
+      toast('Incorrect passcode');
+    }
+  }
+
+  /* =========================================================
+     SCREENS / NAV
+  ========================================================= */
+  function showScreen(id){
+    document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('active'); });
+    document.getElementById(id).classList.add('active');
+    document.getElementById('nav-library').classList.toggle('active', id === 'screen-library');
+    document.getElementById('nav-setlists').classList.toggle('active', id === 'screen-setlists' || id === 'screen-setlist-builder');
+  }
+
+  /* =========================================================
+     LIBRARY
+  ========================================================= */
+  function songList(){
+    return Object.keys(state.songs)
+      .map(function(id){ return Object.assign({ id: id }, state.songs[id]); })
+      .sort(function(a,b){ return (a.title||'').localeCompare(b.title||'', undefined, { sensitivity:'base' }); });
+  }
+
+  function renderLibrary(){
+    const q = (document.getElementById('search-input').value || '').trim().toLowerCase();
+    const grid = document.getElementById('song-grid');
+    const az = document.getElementById('az-index');
+    const all = songList();
+    const filtered = q ? all.filter(function(s){
+      const hay = [s.title, s.artist, s.tags].filter(Boolean).join(' ').toLowerCase();
+      return hay.indexOf(q) !== -1;
+    }) : all;
+
+    grid.innerHTML = '';
+    if (!filtered.length){
+      const empty = document.createElement('div');
+      empty.className = 'empty-state';
+      empty.textContent = all.length ? 'No songs match your search.' : 'No songs yet. Add one to get started.';
+      grid.appendChild(empty);
+    } else {
+      filtered.forEach(function(song){
+        const card = document.createElement('button');
+        card.className = 'song-card';
+        card.dataset.id = song.id;
+        const tags = (song.tags || '').split(',').map(function(t){ return t.trim(); }).filter(Boolean);
+        card.innerHTML =
+          '<div class="title">' + escapeHtml(song.title || 'Untitled') + '</div>' +
+          '<div class="artist">' + escapeHtml(song.artist || '') + '</div>' +
+          (tags.length ? '<div class="tags">' + tags.map(function(t){ return '<span class="tag">' + escapeHtml(t) + '</span>'; }).join('') + '</div>' : '') +
+          '<button class="edit-fab md-only" data-edit="' + song.id + '" title="Edit">✎</button>';
+        card.addEventListener('click', function(e){
+          if (e.target.closest('[data-edit]')) return;
+          openChartStandalone(song.id);
+        });
+        grid.appendChild(card);
+      });
+      grid.querySelectorAll('[data-edit]').forEach(function(btn){
+        btn.addEventListener('click', function(e){
+          e.stopPropagation();
+          openEditor(btn.dataset.edit);
+        });
+      });
+    }
+
+    // A-Z index
+    az.innerHTML = '';
+    const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+    const present = {};
+    all.forEach(function(s){
+      const l = (s.title || '#').trim().charAt(0).toUpperCase();
+      present[l] = true;
+    });
+    letters.forEach(function(l){
+      const b = document.createElement('button');
+      b.textContent = l;
+      if (present[l]) b.classList.add('has-songs');
+      b.addEventListener('click', function(){
+        const target = grid.querySelector('.song-card .title');
+        const cards = Array.from(grid.querySelectorAll('.song-card'));
+        const match = cards.find(function(c){
+          const t = c.querySelector('.title').textContent.trim().charAt(0).toUpperCase();
+          return t === l;
+        });
+        if (match) match.scrollIntoView({ block:'center' });
+      });
+      az.appendChild(b);
+    });
+
+    renderLiveBanner();
+  }
+
+  function renderLiveBanner(){
+    const banner = document.getElementById('live-banner');
+    const headerPill = document.getElementById('header-live-pill');
+    if (!state.live || !state.live.songId){
+      banner.classList.add('hidden');
+      headerPill.classList.add('hidden');
+      return;
+    }
+    const song = state.songs[state.live.songId];
+    const title = song ? (song.title || 'Untitled') : 'Live song';
+    banner.classList.remove('hidden');
+    banner.innerHTML = '<span class="dot"></span> <b>LIVE NOW</b> — ' + escapeHtml(title) + (state.role === 'md' ? ' (tap to open)' : ' — tap to watch');
+    banner.onclick = function(){
+      openChartFromLive();
+    };
+    headerPill.classList.remove('hidden');
+  }
+
+  /* =========================================================
+     EDITOR
+  ========================================================= */
+  function openEditor(songId){
+    let song;
+    if (songId){
+      song = JSON.parse(JSON.stringify(state.songs[songId]));
+    } else {
+      songId = genId();
+      const vId = genId();
+      song = {
+        title: '', artist: '', tags: '',
+        versions: { }
+      };
+      song.versions[vId] = { label: 'Numbers', text: '', order: 0 };
+      state.editingVersionId = vId;
+    }
+    state.editingSongId = songId;
+    state.editingSongDraft = song;
+    if (!state.editingVersionId || !song.versions[state.editingVersionId]){
+      state.editingVersionId = defaultVersionId(song);
+    }
+
+    document.getElementById('edit-title').value = song.title || '';
+    document.getElementById('edit-artist').value = song.artist || '';
+    document.getElementById('edit-tags').value = song.tags || '';
+    document.getElementById('btn-delete-song').classList.toggle('hidden', !state.songs[songId]);
+    renderVersionTabs();
+    showScreen('screen-editor');
+  }
+
+  function renderVersionTabs(){
+    const wrap = document.getElementById('version-tabs');
+    wrap.innerHTML = '';
+    const song = state.editingSongDraft;
+    const versions = orderedVersions(song);
+    versions.forEach(function(v){
+      const tab = document.createElement('button');
+      tab.className = 'version-tab' + (v.id === state.editingVersionId ? ' active' : '');
+      tab.innerHTML = '<span class="v-label">' + escapeHtml(v.label || 'Untitled') + '</span>' +
+        (versions.length > 1 ? '<span class="v-remove" data-remove="' + v.id + '">✕</span>' : '');
+      tab.addEventListener('click', function(e){
+        if (e.target.closest('[data-remove]')) return;
+        selectVersionInEditor(v.id);
+      });
+      tab.addEventListener('dblclick', function(){ renameVersion(v.id); });
+      wrap.appendChild(tab);
+    });
+    const addBtn = document.createElement('button');
+    addBtn.className = 'version-tab-add';
+    addBtn.textContent = '+ Version';
+    addBtn.addEventListener('click', addVersion);
+    wrap.appendChild(addBtn);
+
+    wrap.querySelectorAll('[data-remove]').forEach(function(el){
+      el.addEventListener('click', function(e){
+        e.stopPropagation();
+        removeVersion(el.dataset.remove);
+      });
+    });
+
+    const ta = document.getElementById('edit-textarea');
+    const current = song.versions[state.editingVersionId];
+    ta.value = current ? current.text || '' : '';
+  }
+
+  function commitCurrentTextarea(){
+    const song = state.editingSongDraft;
+    if (!song || !state.editingVersionId || !song.versions[state.editingVersionId]) return;
+    const ta = document.getElementById('edit-textarea');
+    song.versions[state.editingVersionId].text = normalizeWhitespace(ta.value);
+  }
+
+  function selectVersionInEditor(vId){
+    commitCurrentTextarea();
+    state.editingVersionId = vId;
+    renderVersionTabs();
+  }
+
+  function addVersion(){
+    commitCurrentTextarea();
+    const label = window.prompt('Version label (e.g. "D", "Capo 3", "Numbers"):');
+    if (!label) return;
+    const song = state.editingSongDraft;
+    const versions = orderedVersions(song);
+    const id = genId();
+    song.versions[id] = { label: label.trim(), text: '', order: versions.length };
+    state.editingVersionId = id;
+    renderVersionTabs();
+  }
+
+  function renameVersion(vId){
+    const song = state.editingSongDraft;
+    const v = song.versions[vId];
+    if (!v) return;
+    const label = window.prompt('Rename version:', v.label || '');
+    if (label === null) return;
+    v.label = label.trim() || v.label;
+    renderVersionTabs();
+  }
+
+  function removeVersion(vId){
+    const song = state.editingSongDraft;
+    if (Object.keys(song.versions).length <= 1) return;
+    if (!window.confirm('Remove this version? This cannot be undone.')) return;
+    delete song.versions[vId];
+    if (state.editingVersionId === vId){
+      state.editingVersionId = orderedVersions(song)[0].id;
+    }
+    renderVersionTabs();
+  }
+
+  function saveSong(){
+    commitCurrentTextarea();
+    const song = state.editingSongDraft;
+    song.title = document.getElementById('edit-title').value.trim();
+    song.artist = document.getElementById('edit-artist').value.trim();
+    song.tags = document.getElementById('edit-tags').value.trim();
+    if (!song.title){
+      toast('Please enter a title');
+      return;
+    }
+    song.updatedAt = Date.now();
+    Store.set('songs/' + state.editingSongId, song);
+    toast('Saved');
+    showScreen('screen-library');
+    renderLibrary();
+  }
+
+  function deleteSong(){
+    if (!window.confirm('Delete this song permanently?')) return;
+    Store.remove('songs/' + state.editingSongId);
+    toast('Song deleted');
+    showScreen('screen-library');
+    renderLibrary();
+  }
+
+  /* =========================================================
+     SETLISTS
+  ========================================================= */
+  function setlistList(){
+    return Object.keys(state.setlists)
+      .map(function(id){ return Object.assign({ id: id }, state.setlists[id]); })
+      .sort(function(a,b){ return (a.name||'').localeCompare(b.name||'', undefined, { sensitivity:'base' }); });
+  }
+
+  function renderSetlists(){
+    const wrap = document.getElementById('setlist-list');
+    wrap.innerHTML = '';
+    const list = setlistList();
+    if (!list.length){
+      const empty = document.createElement('div');
+      empty.className = 'empty-state';
+      empty.textContent = 'No setlists yet.';
+      wrap.appendChild(empty);
+      return;
+    }
+    list.forEach(function(sl){
+      const row = document.createElement('button');
+      row.className = 'setlist-row';
+      const count = (sl.songIds || []).length;
+      const isLive = state.live && state.live.setlistId === sl.id;
+      row.innerHTML =
+        (isLive ? '<span class="live-dot"></span>' : '') +
+        '<span class="name">' + escapeHtml(sl.name || 'Untitled setlist') + '</span>' +
+        '<span class="count">' + count + ' song' + (count === 1 ? '' : 's') + '</span>';
+      row.addEventListener('click', function(){ openSetlistBuilder(sl.id); });
+      wrap.appendChild(row);
+    });
+  }
+
+  function newSetlist(){
+    const name = window.prompt('Setlist name:');
+    if (!name) return;
+    const id = genId();
+    Store.set('setlists/' + id, { name: name.trim(), songIds: [], createdAt: Date.now() });
+    openSetlistBuilder(id);
+  }
+
+  function openSetlistBuilder(id){
+    state.editingSetlistId = id;
+    const sl = state.setlists[id];
+    document.getElementById('setlist-name-input').value = sl ? (sl.name || '') : '';
+    document.getElementById('btn-go-live').textContent = (state.live && state.live.setlistId === id) ? '⏹ Stop Live' : '🔴 Go Live';
+    document.getElementById('btn-go-live').classList.toggle('is-active', !!(state.live && state.live.setlistId === id));
+    renderSetlistBuilder();
+    document.getElementById('builder-search').value = '';
+    renderBuilderPicker();
+    showScreen('screen-setlist-builder');
+  }
+
+  function currentSetlist(){
+    return state.setlists[state.editingSetlistId];
+  }
+
+  function renderSetlistBuilder(){
+    const sl = currentSetlist();
+    const wrap = document.getElementById('setlist-songs');
+    wrap.innerHTML = '';
+    if (!sl || !(sl.songIds || []).length){
+      const empty = document.createElement('div');
+      empty.className = 'empty-state';
+      empty.textContent = 'No songs in this setlist yet.';
+      wrap.appendChild(empty);
+      return;
+    }
+    sl.songIds.forEach(function(songId, i){
+      const song = state.songs[songId];
+      const row = document.createElement('div');
+      row.className = 'setlist-song-row';
+      row.innerHTML =
+        '<span class="idx">' + (i+1) + '</span>' +
+        '<span class="info"><div class="t">' + escapeHtml(song ? song.title || 'Untitled' : '(missing song)') + '</div>' +
+        '<div class="a">' + escapeHtml(song ? song.artist || '' : '') + '</div></span>' +
+        '<span class="row-actions md-only">' +
+          '<button data-up="' + i + '" ' + (i===0?'disabled':'') + '>↑</button>' +
+          '<button data-down="' + i + '" ' + (i===sl.songIds.length-1?'disabled':'') + '>↓</button>' +
+          '<button data-remove="' + i + '">✕</button>' +
+        '</span>';
+      row.addEventListener('click', function(e){
+        if (e.target.closest('button')) return;
+        openChartFromSetlist(state.editingSetlistId, i);
+      });
+      wrap.appendChild(row);
+    });
+    wrap.querySelectorAll('[data-up]').forEach(function(b){
+      b.addEventListener('click', function(e){ e.stopPropagation(); moveSong(parseInt(b.dataset.up,10), -1); });
+    });
+    wrap.querySelectorAll('[data-down]').forEach(function(b){
+      b.addEventListener('click', function(e){ e.stopPropagation(); moveSong(parseInt(b.dataset.down,10), 1); });
+    });
+    wrap.querySelectorAll('[data-remove]').forEach(function(b){
+      b.addEventListener('click', function(e){ e.stopPropagation(); removeSongFromSetlist(parseInt(b.dataset.remove,10)); });
+    });
+  }
+
+  function saveCurrentSetlist(sl){
+    Store.set('setlists/' + state.editingSetlistId, sl);
+  }
+
+  function moveSong(i, dir){
+    const sl = currentSetlist();
+    const j = i + dir;
+    if (j < 0 || j >= sl.songIds.length) return;
+    const tmp = sl.songIds[i];
+    sl.songIds[i] = sl.songIds[j];
+    sl.songIds[j] = tmp;
+    saveCurrentSetlist(sl);
+  }
+
+  function removeSongFromSetlist(i){
+    const sl = currentSetlist();
+    sl.songIds.splice(i, 1);
+    saveCurrentSetlist(sl);
+  }
+
+  function addSongToSetlist(songId){
+    const sl = currentSetlist();
+    sl.songIds = sl.songIds || [];
+    sl.songIds.push(songId);
+    saveCurrentSetlist(sl);
+  }
+
+  function renderBuilderPicker(){
+    const q = (document.getElementById('builder-search').value || '').trim().toLowerCase();
+    const wrap = document.getElementById('builder-picker');
+    wrap.innerHTML = '';
+    const all = songList().filter(function(s){
+      if (!q) return true;
+      const hay = [s.title, s.artist, s.tags].filter(Boolean).join(' ').toLowerCase();
+      return hay.indexOf(q) !== -1;
+    });
+    all.forEach(function(song){
+      const row = document.createElement('button');
+      row.className = 'pick-row';
+      row.innerHTML = '<span class="info"><div class="t">' + escapeHtml(song.title || 'Untitled') +
+        '</div><div class="a">' + escapeHtml(song.artist || '') + '</div></span><span>+</span>';
+      row.addEventListener('click', function(){ addSongToSetlist(song.id); });
+      wrap.appendChild(row);
+    });
+  }
+
+  function renameSetlist(){
+    const sl = currentSetlist();
+    if (!sl) return;
+    sl.name = document.getElementById('setlist-name-input').value.trim() || sl.name;
+    saveCurrentSetlist(sl);
+  }
+
+  function deleteSetlist(){
+    if (!window.confirm('Delete this setlist? Songs are not affected.')) return;
+    if (state.live && state.live.setlistId === state.editingSetlistId){
+      Store.set('live', null);
+    }
+    Store.remove('setlists/' + state.editingSetlistId);
+    showScreen('screen-setlists');
+    renderSetlists();
+  }
+
+  function goLiveToggle(){
+    const sl = currentSetlist();
+    if (!sl) return;
+    if (state.live && state.live.setlistId === state.editingSetlistId){
+      Store.set('live', null);
+      toast('Stopped live');
+      openSetlistBuilder(state.editingSetlistId);
+      return;
+    }
+    if (!(sl.songIds || []).length){
+      toast('Add songs to this setlist first');
+      return;
+    }
+    const index = 0;
+    const songId = sl.songIds[index];
+    const versionId = defaultVersionId(state.songs[songId]);
+    Store.set('live', { setlistId: state.editingSetlistId, index: index, songId: songId, versionId: versionId, updatedAt: Date.now() });
+    openChartFromSetlist(state.editingSetlistId, index);
+  }
+
+  /* =========================================================
+     CHART VIEW
+  ========================================================= */
+  function openChartStandalone(songId){
+    const song = state.songs[songId];
+    if (!song) return;
+    state.chart.songId = songId;
+    state.chart.versionId = defaultVersionId(song);
+    state.chart.setlistId = null;
+    state.chart.index = null;
+    state.chart.following = false;
+    renderChartScreen();
+    showScreen('screen-chart');
+  }
+
+  function openChartFromSetlist(setlistId, index){
+    const sl = state.setlists[setlistId];
+    if (!sl || !sl.songIds || !sl.songIds[index]) return;
+    const songId = sl.songIds[index];
+    state.chart.setlistId = setlistId;
+    state.chart.index = index;
+    state.chart.songId = songId;
+    state.chart.versionId = defaultVersionId(state.songs[songId]);
+    state.chart.following = !!(state.live && state.live.setlistId === setlistId && state.live.index === index);
+    renderChartScreen();
+    showScreen('screen-chart');
+  }
+
+  function openChartFromLive(){
+    if (!state.live || !state.live.songId) return;
+    state.chart.setlistId = state.live.setlistId;
+    state.chart.index = state.live.index;
+    state.chart.songId = state.live.songId;
+    state.chart.versionId = state.live.versionId || defaultVersionId(state.songs[state.live.songId]);
+    state.chart.following = true;
+    renderChartScreen();
+    showScreen('screen-chart');
+  }
+
+  function isDrivingLive(){
+    return state.role === 'md' && state.live && state.chart.setlistId && state.live.setlistId === state.chart.setlistId;
+  }
+
+  function renderChartScreen(){
+    const song = state.songs[state.chart.songId];
+    document.getElementById('chart-title').textContent = song ? (song.title || 'Untitled') : '';
+    document.getElementById('chart-artist').textContent = song ? (song.artist || '') : '';
+
+    const select = document.getElementById('version-select');
+    select.innerHTML = '';
+    const versions = song ? orderedVersions(song) : [];
+    versions.forEach(function(v){
+      const opt = document.createElement('option');
+      opt.value = v.id;
+      opt.textContent = v.label || 'Untitled';
+      if (v.id === state.chart.versionId) opt.selected = true;
+      select.appendChild(opt);
+    });
+
+    const version = song && song.versions ? song.versions[state.chart.versionId] : null;
+    renderChart(document.getElementById('chart-render'), version ? version.text : '');
+
+    renderChartControls();
+    renderNavArrows();
+    renderFollowPill();
+  }
+
+  function renderChartControls(){
+    const chartScreen = document.getElementById('screen-chart');
+    chartScreen.classList.toggle('chart-light', state.chart.chartLight);
+
+    const liveBtn = document.getElementById('btn-live-toggle');
+    if (state.role === 'md' && state.chart.setlistId){
+      liveBtn.classList.remove('hidden');
+      const driving = isDrivingLive();
+      liveBtn.textContent = driving ? '⏹ Stop Live' : '🔴 Go Live';
+      liveBtn.classList.toggle('is-active', driving);
+    } else {
+      liveBtn.classList.add('hidden');
+    }
+  }
+
+  function renderNavArrows(){
+    const prev = document.getElementById('nav-prev');
+    const next = document.getElementById('nav-next');
+    const sl = state.chart.setlistId ? state.setlists[state.chart.setlistId] : null;
+    if (!sl || state.chart.index === null || state.chart.index === undefined){
+      prev.classList.add('hidden');
+      next.classList.add('hidden');
+      return;
+    }
+    const count = (sl.songIds || []).length;
+    prev.classList.toggle('hidden', state.chart.index <= 0);
+    next.classList.toggle('hidden', state.chart.index >= count - 1);
+  }
+
+  function renderFollowPill(){
+    const pill = document.getElementById('follow-pill');
+    if (state.role !== 'md' && state.live && state.live.songId &&
+        (!state.chart.following) &&
+        (state.chart.setlistId !== state.live.setlistId || state.chart.index !== state.live.index)){
+      const song = state.songs[state.live.songId];
+      pill.textContent = '● Live: ' + (song ? song.title || 'Untitled' : '') + ' — tap to follow';
+      pill.classList.remove('hidden');
+    } else {
+      pill.classList.add('hidden');
+    }
+  }
+
+  function followLiveNow(){
+    openChartFromLive();
+  }
+
+  function navigate(dir){
+    const sl = state.chart.setlistId ? state.setlists[state.chart.setlistId] : null;
+    if (!sl) return;
+    const count = (sl.songIds || []).length;
+    const newIndex = state.chart.index + dir;
+    if (newIndex < 0 || newIndex >= count) return;
+    const songId = sl.songIds[newIndex];
+    const versionId = defaultVersionId(state.songs[songId]);
+
+    state.chart.index = newIndex;
+    state.chart.songId = songId;
+    state.chart.versionId = versionId;
+
+    if (state.role === 'md'){
+      if (isDrivingLive()){
+        Store.set('live', { setlistId: state.chart.setlistId, index: newIndex, songId: songId, versionId: versionId, updatedAt: Date.now() });
+      }
+    } else {
+      state.chart.following = false;
+    }
+    renderChartScreen();
+  }
+
+  function changeVersion(versionId){
+    state.chart.versionId = versionId;
+    if (state.role === 'md' && isDrivingLive()){
+      Store.set('live/versionId', versionId);
+      Store.set('live/updatedAt', Date.now());
+    } else if (state.role !== 'md'){
+      state.chart.following = false;
+    }
+    renderChartScreen();
+  }
+
+  function toggleChartLight(){
+    state.chart.chartLight = !state.chart.chartLight;
+    localStorage.setItem('oncue_chart_light', state.chart.chartLight ? '1' : '0');
+    renderChartControls();
+  }
+
+  /* =========================================================
+     FIREBASE / LIVE SYNC WATCHERS
+  ========================================================= */
+  function wireLiveWatcher(){
+    Store.watch('live', function(live){
+      state.live = live || null;
+      renderLiveBanner();
+      renderSetlists();
+
+      if (state.role !== 'md' && state.chart.following &&
+          document.getElementById('screen-chart').classList.contains('active')){
+        if (live && live.songId){
+          state.chart.setlistId = live.setlistId;
+          state.chart.index = live.index;
+          state.chart.songId = live.songId;
+          state.chart.versionId = live.versionId;
+          renderChartScreen();
+        }
+      } else {
+        renderFollowPill();
+        renderChartControls();
+      }
+    });
+  }
+
+  function wireSongsWatcher(){
+    Store.watch('songs', function(songs){
+      state.songs = songs || {};
+      if (document.getElementById('screen-library').classList.contains('active')) renderLibrary();
+      if (document.getElementById('screen-setlist-builder').classList.contains('active')){
+        renderSetlistBuilder();
+        renderBuilderPicker();
+      }
+      if (document.getElementById('screen-chart').classList.contains('active')) renderChartScreen();
+    });
+  }
+
+  function wireSetlistsWatcher(){
+    Store.watch('setlists', function(setlists){
+      state.setlists = setlists || {};
+      if (document.getElementById('screen-setlists').classList.contains('active')) renderSetlists();
+      if (document.getElementById('screen-setlist-builder').classList.contains('active')) renderSetlistBuilder();
+      renderNavArrows();
+    });
+  }
+
+  function wireConnectionWatcher(){
+    const dot = document.getElementById('sync-dot');
+    if (Store.mode() === 'local'){
+      dot.className = 'sync-dot local';
+      dot.title = 'Local-only mode (Firebase not configured)';
+      return;
+    }
+    Store.watchConnection(function(connected){
+      dot.className = 'sync-dot ' + (connected ? 'ok' : 'off');
+      dot.title = connected ? 'Connected' : 'Offline';
+    });
+  }
+
+  /* =========================================================
+     SWIPE NAVIGATION
+  ========================================================= */
+  function wireSwipe(){
+    const el = document.getElementById('chart-render');
+    let sx = 0, sy = 0, tracking = false;
+    el.addEventListener('touchstart', function(e){
+      if (e.touches.length !== 1) return;
+      sx = e.touches[0].clientX; sy = e.touches[0].clientY; tracking = true;
+    }, { passive:true });
+    el.addEventListener('touchend', function(e){
+      if (!tracking) return;
+      tracking = false;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - sx, dy = t.clientY - sy;
+      if (Math.abs(dx) > 60 && Math.abs(dy) < 40){
+        navigate(dx < 0 ? 1 : -1);
+      }
+    }, { passive:true });
+  }
+
+  /* =========================================================
+     WIRE UP UI
+  ========================================================= */
+  function wireUI(){
+    document.getElementById('btn-logo').addEventListener('click', function(){ showScreen('screen-library'); renderLibrary(); });
+    document.getElementById('nav-library').addEventListener('click', function(){ showScreen('screen-library'); renderLibrary(); });
+    document.getElementById('nav-setlists').addEventListener('click', function(){ showScreen('screen-setlists'); renderSetlists(); });
+    document.getElementById('role-btn').addEventListener('click', toggleRole);
+
+    document.getElementById('search-input').addEventListener('input', renderLibrary);
+    document.getElementById('btn-new-song').addEventListener('click', function(){ openEditor(null); });
+
+    document.getElementById('btn-editor-close').addEventListener('click', function(){ showScreen('screen-library'); renderLibrary(); });
+    document.getElementById('btn-save-song').addEventListener('click', saveSong);
+    document.getElementById('btn-delete-song').addEventListener('click', deleteSong);
+    document.getElementById('edit-textarea').addEventListener('blur', function(e){
+      e.target.value = normalizeWhitespace(e.target.value);
+    });
+
+    document.getElementById('btn-new-setlist').addEventListener('click', newSetlist);
+    document.getElementById('btn-builder-close').addEventListener('click', function(){ showScreen('screen-setlists'); renderSetlists(); });
+    document.getElementById('setlist-name-input').addEventListener('blur', renameSetlist);
+    document.getElementById('btn-delete-setlist').addEventListener('click', deleteSetlist);
+    document.getElementById('btn-go-live').addEventListener('click', goLiveToggle);
+    document.getElementById('builder-search').addEventListener('input', renderBuilderPicker);
+
+    document.getElementById('btn-chart-close').addEventListener('click', function(){
+      if (state.chart.setlistId) { showScreen('screen-setlist-builder'); openSetlistBuilder(state.chart.setlistId); }
+      else { showScreen('screen-library'); renderLibrary(); }
+    });
+    document.getElementById('version-select').addEventListener('change', function(e){ changeVersion(e.target.value); });
+    document.getElementById('btn-light-toggle').addEventListener('click', toggleChartLight);
+    document.getElementById('btn-live-toggle').addEventListener('click', function(){
+      if (isDrivingLive()){
+        Store.set('live', null);
+        toast('Stopped live');
+      } else {
+        Store.set('live', {
+          setlistId: state.chart.setlistId,
+          index: state.chart.index,
+          songId: state.chart.songId,
+          versionId: state.chart.versionId,
+          updatedAt: Date.now()
+        });
+        toast('You are live');
+      }
+      renderChartControls();
+    });
+    document.getElementById('nav-prev').addEventListener('click', function(){ navigate(-1); });
+    document.getElementById('nav-next').addEventListener('click', function(){ navigate(1); });
+    document.getElementById('follow-pill').addEventListener('click', followLiveNow);
+
+    wireSwipe();
+  }
+
+  /* =========================================================
+     INIT
+  ========================================================= */
+  function init(){
+    Store.init();
+    applyRole(getStoredRole());
+    state.chart.chartLight = localStorage.getItem('oncue_chart_light') === '1';
+
+    wireUI();
+    wireSongsWatcher();
+    wireSetlistsWatcher();
+    wireLiveWatcher();
+    wireConnectionWatcher();
+
+    if (Store.mode() === 'local'){
+      toast('Firebase not configured — running local-only. See README.md.');
+    }
+
+    if ('serviceWorker' in navigator){
+      window.addEventListener('load', function(){
+        navigator.serviceWorker.register('sw.js').catch(function(err){
+          console.error('Service worker registration failed', err);
+        });
+      });
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
+})();
+</script>
+</body>
+</html>
