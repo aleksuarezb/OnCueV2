@@ -34,7 +34,7 @@ If `FIREBASE_CONFIG` ever gets reset to placeholder values (e.g. spinning up yet
 
 1. Push this repo to GitHub.
 2. Settings → Pages → Deploy from a branch → `gh-pages` (or `main`, if you prefer serving directly from it) → `/ (root)`.
-3. **Every time you deploy a change, bump `BUILD_ID` at the top of `sw.js`** (e.g. to the current timestamp). This is the entire cache-busting mechanism — a new value forces every connected device to drop its old cached copy and pull the fresh build instead of getting stuck on stale JS on stage.
+3. **Every time you deploy a change, bump `BUILD_ID` at the top of `sw.js`**, and `APP_VERSION` near the top of the `<script>` block in `index.html`, to the same value (e.g. the current timestamp). `BUILD_ID` is the entire cache-busting mechanism — a new value forces every connected device to drop its old cached copy and pull the fresh build instead of getting stuck on stale JS on stage. `APP_VERSION` just surfaces that same value as a small badge in the top-right corner of the landing screen, so you can glance at a device and confirm it picked up the latest push.
 
 ## Roles
 

@@ -131,6 +131,11 @@
   .hidden{ display:none !important; }
 
   /* ---------- landing ---------- */
+  .landing-version{
+    position:absolute; top:calc(8px + env(safe-area-inset-top)); right:12px;
+    font-size:10px; font-weight:600; color:var(--text-faint);
+    letter-spacing:0.02em; z-index:5; pointer-events:none;
+  }
   .landing-wrap{
     max-width:440px; margin:0 auto; width:100%;
     padding:28px 20px 60px;
@@ -402,6 +407,7 @@
   <main id="app-main">
 
     <section id="screen-landing" class="screen active">
+      <div id="landing-version" class="landing-version"></div>
       <div class="landing-wrap">
         <div class="landing-hero">
           <div class="landing-logo-mark" aria-hidden="true">
@@ -565,6 +571,11 @@
   // open read/write rules (matching the original app), so this is only a
   // convenience prompt, not real access control. Change it if you like.
   const MD_PASSCODE = "lwc";
+
+  // Bump this on every deploy, in lockstep with BUILD_ID in sw.js, so the
+  // small badge on the landing screen tells you at a glance whether a
+  // device has picked up the latest push.
+  const APP_VERSION = "2026-09-02T12-00-00";
 
   /* =========================================================
      STORE — a tiny path-based data layer with two backends:
@@ -931,6 +942,7 @@
   }
 
   function renderLanding(){
+    document.getElementById('landing-version').textContent = 'v' + APP_VERSION;
     const stored = getStoredRole();
     document.querySelectorAll('.role-card').forEach(function(c){
       c.classList.toggle('selected', c.dataset.role === stored);
