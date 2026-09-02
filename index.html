@@ -43,7 +43,15 @@
   button, input, select, textarea{ font-family:inherit; }
   button{ cursor:pointer; }
 
-  #app{ height:100vh; height:100dvh; display:flex; flex-direction:column; }
+  /* 100vh/100dvh are unreliable on iOS Safari: 100vh includes the area
+     behind the collapsible toolbar (taller than what's actually visible),
+     and 100dvh silently falls back to that same buggy 100vh on any iPad
+     whose Safari predates dvh support. Both cases would make the app's box
+     taller than the real screen, which then feeds a too-generous height
+     into the chart's page-fitting math. --app-height is set from JS
+     (window.innerHeight, the one measurement iOS has always reported
+     correctly) and takes over the moment it's available. */
+  #app{ height:100vh; height:var(--app-height, 100dvh); display:flex; flex-direction:column; }
 
   /* ---------- header ---------- */
   #app-header{
@@ -582,7 +590,7 @@
   // Bump this on every deploy, in lockstep with BUILD_ID in sw.js, so the
   // small badge on the landing screen tells you at a glance whether a
   // device has picked up the latest push.
-  const APP_VERSION = "2026-09-02T18-00-00";
+  const APP_VERSION = "2026-09-02T20-30-00";
 
   /* =========================================================
      STORE — a tiny path-based data layer with two backends:
@@ -1784,6 +1792,21 @@
     }, { passive:true });
   }
 
+  // See the comment on #app's CSS rule: window.innerHeight is the one
+  // "how tall is the screen right now" measurement iOS Safari has always
+  // reported correctly, unlike 100vh/100dvh. Re-run on resize/orientation
+  // change so rotating (or the toolbar showing/hiding) keeps #app's real
+  // height in sync.
+  function setAppHeight(){
+    document.documentElement.style.setProperty('--app-height', window.innerHeight + 'px');
+  }
+
+  function wireAppHeight(){
+    setAppHeight();
+    window.addEventListener('resize', setAppHeight);
+    window.addEventListener('orientationchange', function(){ setTimeout(setAppHeight, 50); });
+  }
+
   // Rotating an iPad (or resizing) changes how many columns fit and how
   // tall a page can be, so re-paginate the current song when that happens.
   // renderChart() clamps pageIndex into the new page count rather than
@@ -1894,6 +1917,8 @@
      INIT
   ========================================================= */
   function init(){
+    wireAppHeight();
+
     Store.init();
     applyRole(getStoredRole());
     state.chart.chartLight = localStorage.getItem('oncue_chart_light') === '1';
