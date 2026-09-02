@@ -362,6 +362,12 @@
     background:var(--chart-panel); border:1px solid var(--chart-border); color:var(--chart-text-dim);
     font-size:11px; font-weight:700; padding:4px 11px; border-radius:12px; z-index:15;
   }
+  /* Temporary diagnostic aid, only shown with ?debug=1 in the URL. */
+  .debug-readout{
+    position:fixed; top:calc(56px + env(safe-area-inset-top)); left:6px; right:6px;
+    background:rgba(0,0,0,0.85); color:#0f0; font-family:monospace; font-size:10px;
+    line-height:1.4; padding:6px 8px; border-radius:6px; z-index:50; white-space:pre-wrap;
+  }
   .section-header{
     font-weight:700; color:var(--chart-section);
     margin-bottom:0.3rem; font-size:0.95em; letter-spacing:0.02em;
@@ -552,6 +558,7 @@
       <button id="follow-pill" class="follow-pill hidden"></button>
       <div id="chart-render" class="chart-render"></div>
       <div id="page-indicator" class="page-indicator hidden"></div>
+      <div id="debug-readout" class="debug-readout hidden"></div>
       <button id="nav-prev" class="nav-arrow nav-prev hidden">‹</button>
       <button id="nav-next" class="nav-arrow nav-next hidden">›</button>
     </section>
@@ -590,7 +597,7 @@
   // Bump this on every deploy, in lockstep with BUILD_ID in sw.js, so the
   // small badge on the landing screen tells you at a glance whether a
   // device has picked up the latest push.
-  const APP_VERSION = "2026-09-02T20-30-00";
+  const APP_VERSION = "2026-09-02T21-15-00";
 
   /* =========================================================
      STORE — a tiny path-based data layer with two backends:
@@ -856,6 +863,26 @@
   // blocks are packed into full-screen "pages" of 1 or 2 columns each, so a
   // long chart never needs vertical scrolling mid-song — instead it's
   // multiple swipeable pages, each sized to fit the device's screen exactly.
+
+  // Temporary diagnostic aid: add ?debug=1 to the URL to see the real
+  // computed layout numbers on a device, instead of guessing blind about
+  // what a browser we can't directly test (e.g. iPadOS Safari) is doing.
+  const DEBUG_MODE = /[?&]debug=1\b/.test(location.search);
+
+  function renderDebugReadout(metrics, pages, heights){
+    if (!DEBUG_MODE) return;
+    const el = document.getElementById('debug-readout');
+    el.classList.remove('hidden');
+    el.textContent =
+      'innerW/H: ' + window.innerWidth + ' x ' + window.innerHeight + '\n' +
+      '--app-height: ' + getComputedStyle(document.documentElement).getPropertyValue('--app-height') + '\n' +
+      '#app computed height: ' + getComputedStyle(document.getElementById('app')).height + '\n' +
+      'chart-render rect: ' + JSON.stringify(document.getElementById('chart-render').getBoundingClientRect()) + '\n' +
+      'metrics: ' + JSON.stringify(metrics) + '\n' +
+      'section heights: ' + JSON.stringify(heights) + '\n' +
+      'pages: ' + pages.length + ' | cols/page: ' + (pages[0] ? pages[0].length : 0) + ' | sections/col: ' + (pages[0] ? pages[0].map(function(c){ return c.length; }) : []);
+  }
+
   function getChartRenderMetrics(){
     const el = document.getElementById('chart-render');
     const rect = el.getBoundingClientRect();
@@ -954,6 +981,7 @@
     const metrics = getChartRenderMetrics();
     const heights = measureSectionHeights(sectionEls, metrics.columnWidth);
     const pages = paginateSections(sectionEls, heights, metrics.columnsPerPage, metrics.height);
+    renderDebugReadout(metrics, pages, heights);
 
     const pager = document.createElement('div');
     pager.className = 'chart-pager';
