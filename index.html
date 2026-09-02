@@ -356,7 +356,6 @@
   .chart-pager{ display:flex; width:100%; height:100%; transition:transform 0.22s ease; will-change:transform; }
   .chart-page{ flex:0 0 100%; min-width:0; height:100%; display:flex; gap:2.4rem; overflow-y:auto; -webkit-overflow-scrolling:touch; }
   .chart-col{ flex:1 1 0; min-width:0; }
-  .chart-section{ margin-bottom:1.4rem; }
   .page-indicator{
     position:fixed; bottom:calc(14px + env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%);
     background:var(--chart-panel); border:1px solid var(--chart-border); color:var(--chart-text-dim);
@@ -370,7 +369,7 @@
   }
   .section-header{
     font-weight:700; color:var(--chart-section);
-    margin-bottom:0.3rem; font-size:0.95em; letter-spacing:0.02em;
+    margin-top:0.9rem; margin-bottom:0.3rem; font-size:0.95em; letter-spacing:0.02em;
   }
   .chart-line{
     display:grid; grid-auto-flow:column; grid-auto-columns:1ch;
@@ -597,7 +596,7 @@
   // Bump this on every deploy, in lockstep with BUILD_ID in sw.js, so the
   // small badge on the landing screen tells you at a glance whether a
   // device has picked up the latest push.
-  const APP_VERSION = "2026-09-02T21-15-00";
+  const APP_VERSION = "2026-09-02T23-00-00";
 
   /* =========================================================
      STORE — a tiny path-based data layer with two backends:
@@ -802,27 +801,16 @@
     });
   }
 
-  function isSectionHeader(line){
-    return /^\s*\[[^\]]+\]\s*$/.test(line);
-  }
+  // Recognizes both `[Verse 1]`-style bracketed headers and common bare
+  // headers written without brackets (INTRO, VERSE 1, PRE-CHORUS, etc — a
+  // very common convention in real-world charts). This only affects bold
+  // header styling; it never changes what's stored or how spacing renders.
+  const BARE_HEADER = /^(intro|verse|chorus|pre-?chorus|bridge|outro|tag|interlude|turnaround|instrumental|refrain|ending|vamp|breakdown|hook)\.?\s*[0-9ivx]*\.?$/i;
 
-  function splitSections(text){
-    const lines = (text || '').split('\n');
-    const sections = [];
-    let current = { header: null, lines: [] };
-    let started = false;
-    lines.forEach(function(line){
-      if (isSectionHeader(line)){
-        if (started) sections.push(current);
-        current = { header: line.trim(), lines: [] };
-        started = true;
-      } else {
-        current.lines.push(line);
-        started = true;
-      }
-    });
-    if (started) sections.push(current);
-    return sections;
+  function isSectionHeader(line){
+    const trimmed = line.trim();
+    if (/^\[[^\]]+\]$/.test(trimmed)) return true;
+    return BARE_HEADER.test(trimmed);
   }
 
   function renderLineEl(line, cls){
@@ -837,32 +825,33 @@
     return div;
   }
 
-  function buildSectionElement(sec){
-    const block = document.createElement('div');
-    block.className = 'chart-section';
-    if (sec.header){
-      const h = document.createElement('div');
-      h.className = 'chart-line section-header';
-      h.textContent = sec.header;
-      block.appendChild(h);
-    }
-    sec.lines.forEach(function(line){
+  // One DOM element per line of the chart — this, not whole [Section]
+  // blocks, is the atomic unit pagination packs into columns/pages. Packing
+  // by section (keeping a whole verse in one column, never split) sounds
+  // nicer, but real charts don't reliably mark sections at all (no brackets,
+  // no blank lines between verses), and a single undetected "section"
+  // spanning the entire song is exactly what silently produced "everything
+  // crams into column 1, column 2 stays empty, and the rest needs scrolling"
+  // — there was nothing to break it up on. Packing every individual line
+  // instead guarantees a page can always be filled and always stays inside
+  // the visible screen, regardless of how the chart happens to be formatted.
+  function buildChartLineElements(text){
+    return (text || '').split('\n').map(function(line){
+      if (isSectionHeader(line)){
+        const h = document.createElement('div');
+        h.className = 'chart-line section-header';
+        h.textContent = line.trim();
+        return h;
+      }
       if (line.trim() === ''){
         const b = document.createElement('div');
         b.className = 'chart-line blank';
-        block.appendChild(b);
-      } else {
-        const cls = isChordLine(line) ? 'chord-line' : 'lyric-line';
-        block.appendChild(renderLineEl(line, cls));
+        return b;
       }
+      const cls = isChordLine(line) ? 'chord-line' : 'lyric-line';
+      return renderLineEl(line, cls);
     });
-    return block;
   }
-
-  // A song is split into [Section] blocks (see splitSections), then those
-  // blocks are packed into full-screen "pages" of 1 or 2 columns each, so a
-  // long chart never needs vertical scrolling mid-song — instead it's
-  // multiple swipeable pages, each sized to fit the device's screen exactly.
 
   // Temporary diagnostic aid: add ?debug=1 to the URL to see the real
   // computed layout numbers on a device, instead of guessing blind about
@@ -879,8 +868,8 @@
       '#app computed height: ' + getComputedStyle(document.getElementById('app')).height + '\n' +
       'chart-render rect: ' + JSON.stringify(document.getElementById('chart-render').getBoundingClientRect()) + '\n' +
       'metrics: ' + JSON.stringify(metrics) + '\n' +
-      'section heights: ' + JSON.stringify(heights) + '\n' +
-      'pages: ' + pages.length + ' | cols/page: ' + (pages[0] ? pages[0].length : 0) + ' | sections/col: ' + (pages[0] ? pages[0].map(function(c){ return c.length; }) : []);
+      'line count: ' + heights.length + '\n' +
+      'pages: ' + pages.length + ' | cols/page: ' + (pages[0] ? pages[0].length : 0) + ' | lines/col: ' + (pages[0] ? pages[0].map(function(c){ return c.length; }) : []);
   }
 
   function getChartRenderMetrics(){
@@ -896,7 +885,7 @@
     return { columnsPerPage: columnsPerPage, width: width, height: Math.max(height, 1), columnWidth: Math.max(columnWidth, 1) };
   }
 
-  function measureSectionHeights(sectionEls, columnWidth){
+  function measureElementHeights(elements, columnWidth){
     const measurer = document.createElement('div');
     measurer.style.position = 'absolute';
     measurer.style.visibility = 'hidden';
@@ -905,10 +894,10 @@
     measurer.style.top = '0';
     measurer.style.width = columnWidth + 'px';
     document.getElementById('screen-chart').appendChild(measurer);
-    const heights = sectionEls.map(function(el){
+    const heights = elements.map(function(el){
       measurer.appendChild(el);
       const cs = getComputedStyle(el);
-      const h = el.getBoundingClientRect().height + (parseFloat(cs.marginBottom) || 0);
+      const h = el.getBoundingClientRect().height + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0);
       measurer.removeChild(el);
       return h;
     });
@@ -916,12 +905,12 @@
     return heights;
   }
 
-  // Greedily fills column 0 of a page until the next section would overflow
-  // the page height, then column 1, then starts a new page — mirroring how
-  // CSS multi-column with a fixed height and column-fill:auto would behave,
-  // but capped at exactly columnsPerPage real columns instead of spilling
-  // into extra columns that would need horizontal scrolling.
-  function paginateSections(sectionEls, heights, columnsPerPage, pageHeight){
+  // Greedily fills column 0 of a page until the next line would overflow the
+  // page height, then column 1, then starts a new page — mirroring how CSS
+  // multi-column with a fixed height and column-fill:auto would behave, but
+  // capped at exactly columnsPerPage real columns instead of spilling into
+  // extra columns that would need horizontal scrolling.
+  function paginateLines(elements, heights, columnsPerPage, pageHeight){
     const pages = [];
     let page, colIndex, colHeight;
 
@@ -934,8 +923,8 @@
     }
 
     newPage();
-    for (let i = 0; i < sectionEls.length; i++){
-      const el = sectionEls[i];
+    for (let i = 0; i < elements.length; i++){
+      const el = elements[i];
       const h = heights[i];
       if (page[colIndex].length > 0 && colHeight + h > pageHeight){
         colIndex++;
@@ -965,8 +954,7 @@
 
   function renderChart(container, text){
     container.innerHTML = '';
-    const sections = splitSections(text || '');
-    if (!sections.length){
+    if (!(text || '').trim()){
       const empty = document.createElement('div');
       empty.className = 'chart-empty';
       empty.textContent = 'No chart text yet.';
@@ -977,10 +965,10 @@
       return;
     }
 
-    const sectionEls = sections.map(buildSectionElement);
+    const lineEls = buildChartLineElements(text);
     const metrics = getChartRenderMetrics();
-    const heights = measureSectionHeights(sectionEls, metrics.columnWidth);
-    const pages = paginateSections(sectionEls, heights, metrics.columnsPerPage, metrics.height);
+    const heights = measureElementHeights(lineEls, metrics.columnWidth);
+    const pages = paginateLines(lineEls, heights, metrics.columnsPerPage, metrics.height);
     renderDebugReadout(metrics, pages, heights);
 
     const pager = document.createElement('div');
@@ -989,10 +977,10 @@
     pages.forEach(function(pageCols){
       const pageEl = document.createElement('div');
       pageEl.className = 'chart-page';
-      pageCols.forEach(function(colSections){
+      pageCols.forEach(function(colLines){
         const colEl = document.createElement('div');
         colEl.className = 'chart-col';
-        colSections.forEach(function(sec){ colEl.appendChild(sec); });
+        colLines.forEach(function(lineEl){ colEl.appendChild(lineEl); });
         pageEl.appendChild(colEl);
       });
       pager.appendChild(pageEl);
