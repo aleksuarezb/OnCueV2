@@ -372,6 +372,7 @@
     position:fixed; top:calc(56px + env(safe-area-inset-top)); left:6px; right:6px;
     background:rgba(0,0,0,0.85); color:#0f0; font-family:monospace; font-size:10px;
     line-height:1.4; padding:6px 8px; border-radius:6px; z-index:50; white-space:pre-wrap;
+    pointer-events:none;
   }
   .section-header{
     font-weight:700; color:var(--chart-section);
@@ -483,7 +484,8 @@
           <li><b>Add a song</b> (MD only): Library → "+ New Song". Enter a title, then add one or more chart versions — type the chart exactly as it should look on stage. A version named "Numbers" is shown by default.</li>
           <li><b>Build a setlist</b> (MD only): Setlists → "+ New Setlist" → add songs from the library, reorder with the arrows.</li>
           <li><b>Go live</b> (MD only): open a setlist and tap "Go Live" — every Viewer who's following jumps to that song automatically.</li>
-          <li><b>Navigate:</b> swipe left/right on the chart, or use the arrows on the right edge, to move through the setlist.</li>
+          <li><b>Navigate:</b> swipe left/right on the chart, or use the arrows on the right edge — first through a long song's own pages, then on to the next setlist song.</li>
+          <li><b>Force a column break:</b> if a verse gets split awkwardly across a column, put a line containing just <code>---</code> right before it in the chart text — it forces a break there and never shows on stage.</li>
           <li><b>Chart modes:</b> tap the ☀︎ icon on the chart screen to switch between dark and light display.</li>
           <li><b>Switch identity</b> anytime by tapping the OnCue logo in the header.</li>
         </ol>
@@ -606,7 +608,7 @@
   // Bump this on every deploy, in lockstep with BUILD_ID in sw.js, so the
   // small badge on the landing screen tells you at a glance whether a
   // device has picked up the latest push.
-  const APP_VERSION = "2026-09-03T02-00-00";
+  const APP_VERSION = "2026-09-03T03-00-00";
 
   /* =========================================================
      STORE — a tiny path-based data layer with two backends:
@@ -867,21 +869,44 @@
   // — there was nothing to break it up on. Packing every individual line
   // instead guarantees a page can always be filled and always stays inside
   // the visible screen, regardless of how the chart happens to be formatted.
-  function buildChartLineElements(text){
+  // A line that's exactly "---" is a manual break marker: it never renders
+  // itself, but forces whatever comes after it to start in the next
+  // column (or the next page, if it's already in the last column of a
+  // page). It's the escape hatch for when automatic line packing (see the
+  // note below) happens to split something — a verse, say — across a
+  // column in a way you don't want; put a "---" line right before it.
+  function isForceBreak(line){
+    return line.trim() === '---';
+  }
+
+  // One item per line of the chart — this, not whole [Section] blocks, is
+  // the atomic unit pagination packs into columns/pages. Packing by section
+  // (keeping a whole verse in one column, never split) sounds nicer, but
+  // real charts don't reliably mark sections at all (no brackets, no blank
+  // lines between verses), and a single undetected "section" spanning the
+  // entire song is exactly what silently produced "everything crams into
+  // column 1, column 2 stays empty, and the rest needs scrolling" — there
+  // was nothing to break it up on. Packing every individual line instead
+  // guarantees a page can always be filled and always stays inside the
+  // visible screen, regardless of how the chart happens to be formatted;
+  // isForceBreak() above is the manual override for the rare case that
+  // matters (see isForceBreak's comment).
+  function buildChartLineItems(text){
     return (text || '').split('\n').map(function(line){
+      if (isForceBreak(line)) return { forceBreak: true };
       if (isSectionHeader(line)){
         const h = document.createElement('div');
         h.className = 'chart-line section-header';
         h.textContent = line.trim();
-        return h;
+        return { el: h };
       }
       if (line.trim() === ''){
         const b = document.createElement('div');
         b.className = 'chart-line blank';
-        return b;
+        return { el: b };
       }
       const cls = isChordLine(line) ? 'chord-line' : 'lyric-line';
-      return renderLineEl(line, cls);
+      return { el: renderLineEl(line, cls) };
     });
   }
 
@@ -890,7 +915,7 @@
   // what a browser we can't directly test (e.g. iPadOS Safari) is doing.
   const DEBUG_MODE = /[?&]debug=1\b/.test(location.search);
 
-  function renderDebugReadout(metrics, pages, heights){
+  function renderDebugReadout(metrics, pages, items){
     if (!DEBUG_MODE) return;
     const el = document.getElementById('debug-readout');
     el.classList.remove('hidden');
@@ -900,7 +925,7 @@
       '#app computed height: ' + getComputedStyle(document.getElementById('app')).height + '\n' +
       'chart-render rect: ' + JSON.stringify(document.getElementById('chart-render').getBoundingClientRect()) + '\n' +
       'metrics: ' + JSON.stringify(metrics) + '\n' +
-      'line count: ' + heights.length + '\n' +
+      'line count: ' + items.length + ' (incl. ' + items.filter(function(it){ return it.forceBreak; }).length + ' forced breaks)\n' +
       'pages: ' + pages.length + ' | cols/page: ' + (pages[0] ? pages[0].length : 0) + ' | lines/col: ' + (pages[0] ? pages[0].map(function(c){ return c.length; }) : []);
   }
 
@@ -917,7 +942,7 @@
     return { columnsPerPage: columnsPerPage, width: width, height: Math.max(height, 1), columnWidth: Math.max(columnWidth, 1) };
   }
 
-  function measureElementHeights(elements, columnWidth){
+  function measureLineItems(items, columnWidth){
     const measurer = document.createElement('div');
     measurer.style.position = 'absolute';
     measurer.style.visibility = 'hidden';
@@ -926,23 +951,27 @@
     measurer.style.top = '0';
     measurer.style.width = columnWidth + 'px';
     document.getElementById('screen-chart').appendChild(measurer);
-    const heights = elements.map(function(el){
-      measurer.appendChild(el);
-      const cs = getComputedStyle(el);
-      const h = el.getBoundingClientRect().height + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0);
-      measurer.removeChild(el);
-      return h;
+    const measured = items.map(function(item){
+      if (item.forceBreak) return item;
+      measurer.appendChild(item.el);
+      const cs = getComputedStyle(item.el);
+      const h = item.el.getBoundingClientRect().height + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0);
+      measurer.removeChild(item.el);
+      return { el: item.el, height: h };
     });
     measurer.remove();
-    return heights;
+    return measured;
   }
 
   // Greedily fills column 0 of a page until the next line would overflow the
   // page height, then column 1, then starts a new page — mirroring how CSS
   // multi-column with a fixed height and column-fill:auto would behave, but
   // capped at exactly columnsPerPage real columns instead of spilling into
-  // extra columns that would need horizontal scrolling.
-  function paginateLines(elements, heights, columnsPerPage, pageHeight){
+  // extra columns that would need horizontal scrolling. A forceBreak item
+  // (see isForceBreak) jumps straight to the next column/page instead of
+  // being measured or rendered, unless the current column is still empty
+  // (a "---" right at the top of a column would otherwise leave a blank one).
+  function paginateLines(items, columnsPerPage, pageHeight){
     const pages = [];
     let page, colIndex, colHeight;
 
@@ -955,15 +984,23 @@
     }
 
     newPage();
-    for (let i = 0; i < elements.length; i++){
-      const el = elements[i];
-      const h = heights[i];
+    for (let i = 0; i < items.length; i++){
+      const item = items[i];
+      if (item.forceBreak){
+        if (page[colIndex].length > 0){
+          colIndex++;
+          colHeight = 0;
+          if (colIndex >= columnsPerPage) newPage();
+        }
+        continue;
+      }
+      const h = item.height;
       if (page[colIndex].length > 0 && colHeight + h > pageHeight){
         colIndex++;
         colHeight = 0;
         if (colIndex >= columnsPerPage) newPage();
       }
-      page[colIndex].push(el);
+      page[colIndex].push(item.el);
       colHeight += h;
     }
     return pages;
@@ -997,11 +1034,11 @@
       return;
     }
 
-    const lineEls = buildChartLineElements(text);
+    const rawItems = buildChartLineItems(text);
     const metrics = getChartRenderMetrics();
-    const heights = measureElementHeights(lineEls, metrics.columnWidth);
-    const pages = paginateLines(lineEls, heights, metrics.columnsPerPage, metrics.height);
-    renderDebugReadout(metrics, pages, heights);
+    const items = measureLineItems(rawItems, metrics.columnWidth);
+    const pages = paginateLines(items, metrics.columnsPerPage, metrics.height);
+    renderDebugReadout(metrics, pages, items);
 
     const pager = document.createElement('div');
     pager.className = 'chart-pager';
