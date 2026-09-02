@@ -344,10 +344,16 @@
     font-size:13px; font-weight:700; z-index:15; border:none;
   }
 
-  .chart-render{ flex:1; padding:18px 22px 60px; overflow-y:auto; -webkit-overflow-scrolling:touch; }
-  .chart-columns{ columns:2; column-gap:2.4rem; }
-  @media (max-width:600px){ .chart-columns{ columns:1; } }
-  .chart-section{ break-inside:avoid; -webkit-column-break-inside:avoid; margin-bottom:1.4rem; }
+  .chart-render{ flex:1; padding:18px 22px 60px; overflow:hidden; position:relative; }
+  .chart-pager{ display:flex; width:100%; height:100%; transition:transform 0.22s ease; will-change:transform; }
+  .chart-page{ flex:0 0 100%; min-width:0; height:100%; display:flex; gap:2.4rem; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+  .chart-col{ flex:1 1 0; min-width:0; }
+  .chart-section{ margin-bottom:1.4rem; }
+  .page-indicator{
+    position:fixed; bottom:calc(14px + env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%);
+    background:var(--chart-panel); border:1px solid var(--chart-border); color:var(--chart-text-dim);
+    font-size:11px; font-weight:700; padding:4px 11px; border-radius:12px; z-index:15;
+  }
   .section-header{
     font-weight:700; color:var(--chart-section);
     margin-bottom:0.3rem; font-size:0.95em; letter-spacing:0.02em;
@@ -537,6 +543,7 @@
       </div>
       <button id="follow-pill" class="follow-pill hidden"></button>
       <div id="chart-render" class="chart-render"></div>
+      <div id="page-indicator" class="page-indicator hidden"></div>
       <button id="nav-prev" class="nav-arrow nav-prev hidden">‹</button>
       <button id="nav-next" class="nav-arrow nav-next hidden">›</button>
     </section>
@@ -575,7 +582,7 @@
   // Bump this on every deploy, in lockstep with BUILD_ID in sw.js, so the
   // small badge on the landing screen tells you at a glance whether a
   // device has picked up the latest push.
-  const APP_VERSION = "2026-09-02T12-00-00";
+  const APP_VERSION = "2026-09-02T18-00-00";
 
   /* =========================================================
      STORE — a tiny path-based data layer with two backends:
@@ -815,6 +822,112 @@
     return div;
   }
 
+  function buildSectionElement(sec){
+    const block = document.createElement('div');
+    block.className = 'chart-section';
+    if (sec.header){
+      const h = document.createElement('div');
+      h.className = 'chart-line section-header';
+      h.textContent = sec.header;
+      block.appendChild(h);
+    }
+    sec.lines.forEach(function(line){
+      if (line.trim() === ''){
+        const b = document.createElement('div');
+        b.className = 'chart-line blank';
+        block.appendChild(b);
+      } else {
+        const cls = isChordLine(line) ? 'chord-line' : 'lyric-line';
+        block.appendChild(renderLineEl(line, cls));
+      }
+    });
+    return block;
+  }
+
+  // A song is split into [Section] blocks (see splitSections), then those
+  // blocks are packed into full-screen "pages" of 1 or 2 columns each, so a
+  // long chart never needs vertical scrolling mid-song — instead it's
+  // multiple swipeable pages, each sized to fit the device's screen exactly.
+  function getChartRenderMetrics(){
+    const el = document.getElementById('chart-render');
+    const rect = el.getBoundingClientRect();
+    const cs = getComputedStyle(el);
+    const width = rect.width - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+    const height = rect.height - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);
+    const columnsPerPage = width < 600 ? 1 : 2;
+    const rootFontSize = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    const gap = columnsPerPage === 2 ? rootFontSize * 2.4 : 0;
+    const columnWidth = columnsPerPage === 2 ? (width - gap) / 2 : width;
+    return { columnsPerPage: columnsPerPage, width: width, height: Math.max(height, 1), columnWidth: Math.max(columnWidth, 1) };
+  }
+
+  function measureSectionHeights(sectionEls, columnWidth){
+    const measurer = document.createElement('div');
+    measurer.style.position = 'absolute';
+    measurer.style.visibility = 'hidden';
+    measurer.style.pointerEvents = 'none';
+    measurer.style.left = '-99999px';
+    measurer.style.top = '0';
+    measurer.style.width = columnWidth + 'px';
+    document.getElementById('screen-chart').appendChild(measurer);
+    const heights = sectionEls.map(function(el){
+      measurer.appendChild(el);
+      const cs = getComputedStyle(el);
+      const h = el.getBoundingClientRect().height + (parseFloat(cs.marginBottom) || 0);
+      measurer.removeChild(el);
+      return h;
+    });
+    measurer.remove();
+    return heights;
+  }
+
+  // Greedily fills column 0 of a page until the next section would overflow
+  // the page height, then column 1, then starts a new page — mirroring how
+  // CSS multi-column with a fixed height and column-fill:auto would behave,
+  // but capped at exactly columnsPerPage real columns instead of spilling
+  // into extra columns that would need horizontal scrolling.
+  function paginateSections(sectionEls, heights, columnsPerPage, pageHeight){
+    const pages = [];
+    let page, colIndex, colHeight;
+
+    function newPage(){
+      page = [];
+      for (let i = 0; i < columnsPerPage; i++) page.push([]);
+      pages.push(page);
+      colIndex = 0;
+      colHeight = 0;
+    }
+
+    newPage();
+    for (let i = 0; i < sectionEls.length; i++){
+      const el = sectionEls[i];
+      const h = heights[i];
+      if (page[colIndex].length > 0 && colHeight + h > pageHeight){
+        colIndex++;
+        colHeight = 0;
+        if (colIndex >= columnsPerPage) newPage();
+      }
+      page[colIndex].push(el);
+      colHeight += h;
+    }
+    return pages;
+  }
+
+  function applyChartPageTransform(){
+    const pager = document.getElementById('chart-pager');
+    if (pager) pager.style.transform = 'translateX(-' + (state.chart.pageIndex * 100) + '%)';
+  }
+
+  function renderPageIndicator(){
+    const el = document.getElementById('page-indicator');
+    if (state.chart.totalPages <= 1){
+      el.classList.add('hidden');
+      return;
+    }
+    el.textContent = (state.chart.pageIndex + 1) + ' / ' + state.chart.totalPages;
+    el.classList.remove('hidden');
+  }
+
   function renderChart(container, text){
     container.innerHTML = '';
     const sections = splitSections(text || '');
@@ -823,32 +936,37 @@
       empty.className = 'chart-empty';
       empty.textContent = 'No chart text yet.';
       container.appendChild(empty);
+      state.chart.totalPages = 1;
+      state.chart.pageIndex = 0;
+      renderPageIndicator();
       return;
     }
-    const wrap = document.createElement('div');
-    wrap.className = 'chart-columns';
-    sections.forEach(function(sec){
-      const block = document.createElement('div');
-      block.className = 'chart-section';
-      if (sec.header){
-        const h = document.createElement('div');
-        h.className = 'chart-line section-header';
-        h.textContent = sec.header;
-        block.appendChild(h);
-      }
-      sec.lines.forEach(function(line){
-        if (line.trim() === ''){
-          const b = document.createElement('div');
-          b.className = 'chart-line blank';
-          block.appendChild(b);
-        } else {
-          const cls = isChordLine(line) ? 'chord-line' : 'lyric-line';
-          block.appendChild(renderLineEl(line, cls));
-        }
+
+    const sectionEls = sections.map(buildSectionElement);
+    const metrics = getChartRenderMetrics();
+    const heights = measureSectionHeights(sectionEls, metrics.columnWidth);
+    const pages = paginateSections(sectionEls, heights, metrics.columnsPerPage, metrics.height);
+
+    const pager = document.createElement('div');
+    pager.className = 'chart-pager';
+    pager.id = 'chart-pager';
+    pages.forEach(function(pageCols){
+      const pageEl = document.createElement('div');
+      pageEl.className = 'chart-page';
+      pageCols.forEach(function(colSections){
+        const colEl = document.createElement('div');
+        colEl.className = 'chart-col';
+        colSections.forEach(function(sec){ colEl.appendChild(sec); });
+        pageEl.appendChild(colEl);
       });
-      wrap.appendChild(block);
+      pager.appendChild(pageEl);
     });
-    container.appendChild(wrap);
+    container.appendChild(pager);
+
+    state.chart.totalPages = pages.length;
+    state.chart.pageIndex = Math.min(state.chart.pageIndex || 0, pages.length - 1);
+    applyChartPageTransform();
+    renderPageIndicator();
   }
 
   function toast(msg){
@@ -877,7 +995,15 @@
       setlistId: null,
       index: null,
       following: true,
-      chartLight: false
+      chartLight: false,
+      // Which page of the CURRENT song is showing, and how many pages it
+      // paginates into on this device's screen. Purely local display state —
+      // never synced over Firebase, since different screens paginate a song
+      // differently (an iPad in landscape fits far more per page than one
+      // in portrait, let alone a phone), so mirroring page position across
+      // devices would be actively wrong.
+      pageIndex: 0,
+      totalPages: 1
     }
   };
 
@@ -1397,8 +1523,9 @@
     state.chart.setlistId = null;
     state.chart.index = null;
     state.chart.following = false;
-    renderChartScreen();
+    state.chart.pageIndex = 0;
     showScreen('screen-chart');
+    renderChartScreen();
   }
 
   function openChartFromSetlist(setlistId, index){
@@ -1410,8 +1537,9 @@
     state.chart.songId = songId;
     state.chart.versionId = defaultVersionId(state.songs[songId]);
     state.chart.following = !!(state.live && state.live.setlistId === setlistId && state.live.index === index);
-    renderChartScreen();
+    state.chart.pageIndex = 0;
     showScreen('screen-chart');
+    renderChartScreen();
   }
 
   function openChartFromLive(){
@@ -1421,8 +1549,9 @@
     state.chart.songId = state.live.songId;
     state.chart.versionId = state.live.versionId || defaultVersionId(state.songs[state.live.songId]);
     state.chart.following = true;
-    renderChartScreen();
+    state.chart.pageIndex = 0;
     showScreen('screen-chart');
+    renderChartScreen();
   }
 
   function isDrivingLive(){
@@ -1472,14 +1601,16 @@
     const prev = document.getElementById('nav-prev');
     const next = document.getElementById('nav-next');
     const sl = state.chart.setlistId ? state.setlists[state.chart.setlistId] : null;
-    if (!sl || state.chart.index === null || state.chart.index === undefined){
-      prev.classList.add('hidden');
-      next.classList.add('hidden');
-      return;
-    }
-    const count = (sl.songIds || []).length;
-    prev.classList.toggle('hidden', state.chart.index <= 0);
-    next.classList.toggle('hidden', state.chart.index >= count - 1);
+    const hasSetlist = !!sl && state.chart.index !== null && state.chart.index !== undefined;
+    const songCount = hasSetlist ? (sl.songIds || []).length : 0;
+
+    const atFirstPage = state.chart.pageIndex <= 0;
+    const atLastPage = state.chart.pageIndex >= state.chart.totalPages - 1;
+    const atFirstSong = !hasSetlist || state.chart.index <= 0;
+    const atLastSong = !hasSetlist || state.chart.index >= songCount - 1;
+
+    prev.classList.toggle('hidden', atFirstPage && atFirstSong);
+    next.classList.toggle('hidden', atLastPage && atLastSong);
   }
 
   function renderFollowPill(){
@@ -1499,7 +1630,11 @@
     openChartFromLive();
   }
 
-  function navigate(dir){
+  // Moves to the next/previous SONG in the active setlist (a no-op when
+  // there's no setlist context, or already at the first/last song). This is
+  // the only navigation that pushes over Firebase when the MD is driving
+  // live — see navigateChart() below for the page-vs-song precedence.
+  function navigateSong(dir){
     const sl = state.chart.setlistId ? state.setlists[state.chart.setlistId] : null;
     if (!sl) return;
     const count = (sl.songIds || []).length;
@@ -1511,6 +1646,10 @@
     state.chart.index = newIndex;
     state.chart.songId = songId;
     state.chart.versionId = versionId;
+    // Paging backward past a song's start should land on its LAST page (like
+    // flipping back through a songbook), not page 1 — renderChart() clamps
+    // this to the new song's real page count once it knows it.
+    state.chart.pageIndex = dir < 0 ? Infinity : 0;
 
     if (state.role === 'md'){
       if (isDrivingLive()){
@@ -1522,8 +1661,32 @@
     renderChartScreen();
   }
 
+  // Swipe/arrow entry point: pages through the current song first (purely
+  // local, never synced — see the note on state.chart.pageIndex), and only
+  // moves to the next/previous setlist song once already at the current
+  // song's first/last page.
+  function navigateChart(dir){
+    if (dir > 0 && state.chart.pageIndex < state.chart.totalPages - 1){
+      showChartPage(state.chart.pageIndex + 1);
+      return;
+    }
+    if (dir < 0 && state.chart.pageIndex > 0){
+      showChartPage(state.chart.pageIndex - 1);
+      return;
+    }
+    navigateSong(dir);
+  }
+
+  function showChartPage(index){
+    state.chart.pageIndex = Math.max(0, Math.min(index, state.chart.totalPages - 1));
+    applyChartPageTransform();
+    renderPageIndicator();
+    renderNavArrows();
+  }
+
   function changeVersion(versionId){
     state.chart.versionId = versionId;
+    state.chart.pageIndex = 0;
     if (state.role === 'md' && isDrivingLive()){
       Store.set('live/versionId', versionId);
       Store.set('live/updatedAt', Date.now());
@@ -1555,6 +1718,7 @@
           state.chart.index = live.index;
           state.chart.songId = live.songId;
           state.chart.versionId = live.versionId;
+          state.chart.pageIndex = 0;
           renderChartScreen();
         }
       } else {
@@ -1615,9 +1779,28 @@
       const t = e.changedTouches[0];
       const dx = t.clientX - sx, dy = t.clientY - sy;
       if (Math.abs(dx) > 60 && Math.abs(dy) < 40){
-        navigate(dx < 0 ? 1 : -1);
+        navigateChart(dx < 0 ? 1 : -1);
       }
     }, { passive:true });
+  }
+
+  // Rotating an iPad (or resizing) changes how many columns fit and how
+  // tall a page can be, so re-paginate the current song when that happens.
+  // renderChart() clamps pageIndex into the new page count rather than
+  // resetting it, so mid-song rotation doesn't jump the reader back to
+  // page 1.
+  function wireChartReflow(){
+    let timer = null;
+    window.addEventListener('resize', function(){
+      clearTimeout(timer);
+      timer = setTimeout(function(){
+        if (!document.getElementById('screen-chart').classList.contains('active')) return;
+        const song = state.songs[state.chart.songId];
+        const version = song && song.versions ? song.versions[state.chart.versionId] : null;
+        renderChart(document.getElementById('chart-render'), version ? version.text : '');
+        renderNavArrows();
+      }, 150);
+    });
   }
 
   /* =========================================================
@@ -1700,8 +1883,8 @@
       }
       renderChartControls();
     });
-    document.getElementById('nav-prev').addEventListener('click', function(){ navigate(-1); });
-    document.getElementById('nav-next').addEventListener('click', function(){ navigate(1); });
+    document.getElementById('nav-prev').addEventListener('click', function(){ navigateChart(-1); });
+    document.getElementById('nav-next').addEventListener('click', function(){ navigateChart(1); });
     document.getElementById('follow-pill').addEventListener('click', followLiveNow);
 
     wireSwipe();
@@ -1720,6 +1903,7 @@
     wireSetlistsWatcher();
     wireLiveWatcher();
     wireConnectionWatcher();
+    wireChartReflow();
 
     showScreen('screen-landing');
     renderLanding();

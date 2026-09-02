@@ -51,6 +51,7 @@ Deliberately simple, by design (see the project brief this was built from):
 - There is **no chord parsing, auto-transpose, or computed layout** of any kind. What's typed is what's shown, character for character.
 - A version labeled `"Numbers"` (case-insensitive) is shown by default when present, since it lets anyone play regardless of key; otherwise the first version is shown.
 - `[Section Header]` lines (e.g. `[Verse 1]`) split the chart into blocks for the two-column layout; everything else renders as-is.
+- If a song is too long to fit one screen, it's split into multiple full-screen **pages** (each its own 1- or 2-column spread) rather than letting a single page scroll — swipe or use the arrows to move between pages, then automatically on to the next setlist song once you're past a song's last page. See "Rendering" below for how pages are computed.
 
 ### Whitespace integrity
 
@@ -64,6 +65,12 @@ Chart alignment is exact plain text — if the columns don't line up in the stor
 Chart text is rendered with a fixed character grid (`display:grid; grid-auto-flow:column; grid-auto-columns:1ch`, one `<span>` per character), not by trusting the font to be perfectly monospaced — this makes column position immune to font/kerning quirks. Whole lines are classified as chord lines or lyric lines and colored as a single unbroken text run (never per-token `<span>` coloring), which avoids the sub-pixel rounding drift that compounds when a line is split into multiple inline-colored fragments.
 
 Chart light mode is a CSS class toggle scoped to the chart screen, with its own explicit color tokens — it never reads `prefers-color-scheme`, so it can't be silently overridden by the device's system theme.
+
+### Pagination
+
+A song's `[Section]` blocks are packed into full-screen pages: each block is measured (off-screen, at the real column width) and greedily placed into column 1 of a page, then column 2, then a new page — the same shape a CSS multi-column layout with a fixed height would produce, but computed in JS so it's capped at exactly 1 or 2 real columns instead of silently spilling into extra columns that would need horizontal scrolling. This recomputes on resize/rotation (debounced), clamping the current page into the new page count rather than resetting to page 1, so rotating an iPad mid-song doesn't lose your place.
+
+Page position is **local, per-device, and never synced over Firebase** — different screens paginate the same song differently (an iPad in landscape fits far more per page than the same iPad in portrait, let alone a phone), so mirroring a page index across devices would be actively wrong. What *is* still synced is the song itself: swiping/tapping past a song's last page falls through to the existing setlist song-navigation (see below), which behaves exactly as before.
 
 ## Setlist navigation — design decision
 
