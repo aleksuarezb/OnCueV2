@@ -296,6 +296,10 @@
   .setlist-song-row .info{ flex:1; min-width:0; }
   .setlist-song-row .info .t{ font-size:14px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .setlist-song-row .info .a{ font-size:12px; color:var(--text-dim); }
+  .setlist-song-row .key-select{
+    flex:0 0 auto; max-width:112px; background:var(--bg-elevated); border:1px solid var(--border);
+    color:var(--text); border-radius:6px; padding:5px 6px; font-size:12px; font-weight:600;
+  }
   .setlist-song-row .row-actions{ display:flex; gap:4px; }
   .setlist-song-row button{ background:var(--bg-elevated); border:1px solid var(--border); color:var(--text); border-radius:6px; width:28px; height:28px; font-size:14px; }
   #setlist-name-input{ margin:0 16px 6px; }
@@ -337,7 +341,9 @@
   #screen-chart{ background:var(--chart-bg); color:var(--chart-text); }
   .chart-topbar{ background:var(--chart-panel); border-bottom:1px solid var(--chart-border); color:var(--chart-text); }
   .chart-title-block{ flex:1; min-width:0; }
-  .chart-title{ font-size:16px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .chart-title-row{ display:flex; align-items:baseline; gap:8px; min-width:0; }
+  .chart-title{ flex:0 1 auto; min-width:0; font-size:16px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .chart-info-badge{ flex:0 0 auto; font-size:11px; font-weight:600; color:var(--chart-text-dim); white-space:nowrap; }
   .chart-artist{ font-size:12px; color:var(--chart-text-dim); }
   .chart-controls{ display:flex; align-items:center; gap:6px; }
   .version-select{
@@ -506,6 +512,7 @@
         <input id="edit-title" class="text-input" placeholder="Title" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
         <input id="edit-artist" class="text-input" placeholder="Artist" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
         <input id="edit-tags" class="text-input" placeholder="Tags (comma separated)" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+        <input id="edit-info" class="text-input" placeholder="Key / Tempo / Time (optional) — e.g. Key - C | Tempo - 64 | Time - 4/4" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
       </div>
       <div class="version-tabs" id="version-tabs"></div>
       <textarea id="edit-textarea" class="chart-textarea" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Type or paste the chart exactly as it should appear on stage…"></textarea>
@@ -545,7 +552,10 @@
       <div class="chart-topbar">
         <button id="btn-chart-close" class="btn btn-ghost">← Back</button>
         <div class="chart-title-block">
-          <div id="chart-title" class="chart-title"></div>
+          <div class="chart-title-row">
+            <div id="chart-title" class="chart-title"></div>
+            <div id="chart-info-badge" class="chart-info-badge hidden"></div>
+          </div>
           <div id="chart-artist" class="chart-artist"></div>
         </div>
         <div class="chart-controls">
@@ -596,7 +606,7 @@
   // Bump this on every deploy, in lockstep with BUILD_ID in sw.js, so the
   // small badge on the landing screen tells you at a glance whether a
   // device has picked up the latest push.
-  const APP_VERSION = "2026-09-02T23-00-00";
+  const APP_VERSION = "2026-09-03T01-00-00";
 
   /* =========================================================
      STORE — a tiny path-based data layer with two backends:
@@ -786,6 +796,28 @@
     if (!list.length) return null;
     const numbers = list.find(function(v){ return (v.label||'').trim().toLowerCase() === 'numbers'; });
     return numbers ? numbers.id : list[0].id;
+  }
+
+  // A setlist's songs are {songId, versionId} entries, where versionId is
+  // the per-setlist "default key" override (null = fall back to the song's
+  // own default, i.e. Numbers). Older setlists only have a flat songIds
+  // array of strings; this reads either shape without needing a migration
+  // step — writes always go out in the new {items} shape (see
+  // saveCurrentSetlist), so a setlist upgrades itself the next time it's
+  // edited.
+  function setlistItems(sl){
+    if (!sl) return [];
+    if (Array.isArray(sl.items)) return sl.items;
+    return (sl.songIds || []).map(function(id){ return { songId: id, versionId: null }; });
+  }
+
+  // Resolves a setlist entry's chosen key to an actual version id, falling
+  // back to the song's default if no override is set OR the overridden
+  // version no longer exists on the song (e.g. it was deleted in the
+  // editor after being picked here).
+  function resolveVersionId(song, versionId){
+    if (versionId && song && song.versions && song.versions[versionId]) return versionId;
+    return defaultVersionId(song);
   }
 
   const CHORD_TOKEN = /^[\(\[]?[A-G](#|b)?(maj|min|m|dim|aug|sus[24]?|add)?[0-9]*(\/[A-G](#|b)?)?[\)\]]?$/i;
@@ -1243,6 +1275,7 @@
     document.getElementById('edit-title').value = song.title || '';
     document.getElementById('edit-artist').value = song.artist || '';
     document.getElementById('edit-tags').value = song.tags || '';
+    document.getElementById('edit-info').value = song.info || '';
     document.getElementById('btn-delete-song').classList.toggle('hidden', !state.songs[songId]);
     renderVersionTabs();
     showScreen('screen-editor');
@@ -1335,6 +1368,7 @@
     song.title = document.getElementById('edit-title').value.trim();
     song.artist = document.getElementById('edit-artist').value.trim();
     song.tags = document.getElementById('edit-tags').value.trim();
+    song.info = document.getElementById('edit-info').value.trim();
     if (!song.title){
       toast('Please enter a title');
       return;
@@ -1377,7 +1411,7 @@
     list.forEach(function(sl){
       const row = document.createElement('button');
       row.className = 'setlist-row';
-      const count = (sl.songIds || []).length;
+      const count = setlistItems(sl).length;
       const isLive = state.live && state.live.setlistId === sl.id;
       row.innerHTML =
         (isLive ? '<span class="live-dot"></span>' : '') +
@@ -1392,7 +1426,7 @@
     const name = window.prompt('Setlist name:');
     if (!name) return;
     const id = genId();
-    Store.set('setlists/' + id, { name: name.trim(), songIds: [], createdAt: Date.now() });
+    Store.set('setlists/' + id, { name: name.trim(), items: [], createdAt: Date.now() });
     openSetlistBuilder(id);
   }
 
@@ -1416,28 +1450,39 @@
     const sl = currentSetlist();
     const wrap = document.getElementById('setlist-songs');
     wrap.innerHTML = '';
-    if (!sl || !(sl.songIds || []).length){
+    const items = setlistItems(sl);
+    if (!sl || !items.length){
       const empty = document.createElement('div');
       empty.className = 'empty-state';
       empty.textContent = 'No songs in this setlist yet.';
       wrap.appendChild(empty);
       return;
     }
-    sl.songIds.forEach(function(songId, i){
-      const song = state.songs[songId];
+    items.forEach(function(item, i){
+      const song = state.songs[item.songId];
+      const versions = song ? orderedVersions(song) : [];
+      const defaultLabel = song && song.versions && song.versions[defaultVersionId(song)]
+        ? (song.versions[defaultVersionId(song)].label || 'Untitled') : '—';
       const row = document.createElement('div');
       row.className = 'setlist-song-row';
       row.innerHTML =
         '<span class="idx">' + (i+1) + '</span>' +
         '<span class="info"><div class="t">' + escapeHtml(song ? song.title || 'Untitled' : '(missing song)') + '</div>' +
         '<div class="a">' + escapeHtml(song ? song.artist || '' : '') + '</div></span>' +
+        (versions.length > 1 ?
+          '<select class="key-select md-only" data-key-index="' + i + '">' +
+            '<option value="">Default (' + escapeHtml(defaultLabel) + ')</option>' +
+            versions.map(function(v){
+              return '<option value="' + v.id + '"' + (item.versionId === v.id ? ' selected' : '') + '>' + escapeHtml(v.label || 'Untitled') + '</option>';
+            }).join('') +
+          '</select>' : '') +
         '<span class="row-actions md-only">' +
           '<button data-up="' + i + '" ' + (i===0?'disabled':'') + '>↑</button>' +
-          '<button data-down="' + i + '" ' + (i===sl.songIds.length-1?'disabled':'') + '>↓</button>' +
+          '<button data-down="' + i + '" ' + (i===items.length-1?'disabled':'') + '>↓</button>' +
           '<button data-remove="' + i + '">✕</button>' +
         '</span>';
       row.addEventListener('click', function(e){
-        if (e.target.closest('button')) return;
+        if (e.target.closest('button') || e.target.closest('select')) return;
         openChartFromSetlist(state.editingSetlistId, i);
       });
       wrap.appendChild(row);
@@ -1451,6 +1496,12 @@
     wrap.querySelectorAll('[data-remove]').forEach(function(b){
       b.addEventListener('click', function(e){ e.stopPropagation(); removeSongFromSetlist(parseInt(b.dataset.remove,10)); });
     });
+    wrap.querySelectorAll('.key-select').forEach(function(sel){
+      sel.addEventListener('click', function(e){ e.stopPropagation(); });
+      sel.addEventListener('change', function(){
+        setSetlistItemVersion(parseInt(sel.dataset.keyIndex, 10), sel.value || null);
+      });
+    });
   }
 
   function saveCurrentSetlist(sl){
@@ -1459,24 +1510,42 @@
 
   function moveSong(i, dir){
     const sl = currentSetlist();
+    const items = setlistItems(sl);
     const j = i + dir;
-    if (j < 0 || j >= sl.songIds.length) return;
-    const tmp = sl.songIds[i];
-    sl.songIds[i] = sl.songIds[j];
-    sl.songIds[j] = tmp;
+    if (j < 0 || j >= items.length) return;
+    const tmp = items[i];
+    items[i] = items[j];
+    items[j] = tmp;
+    sl.items = items;
+    delete sl.songIds;
     saveCurrentSetlist(sl);
   }
 
   function removeSongFromSetlist(i){
     const sl = currentSetlist();
-    sl.songIds.splice(i, 1);
+    const items = setlistItems(sl);
+    items.splice(i, 1);
+    sl.items = items;
+    delete sl.songIds;
     saveCurrentSetlist(sl);
   }
 
   function addSongToSetlist(songId){
     const sl = currentSetlist();
-    sl.songIds = sl.songIds || [];
-    sl.songIds.push(songId);
+    const items = setlistItems(sl);
+    items.push({ songId: songId, versionId: null });
+    sl.items = items;
+    delete sl.songIds;
+    saveCurrentSetlist(sl);
+  }
+
+  function setSetlistItemVersion(i, versionId){
+    const sl = currentSetlist();
+    const items = setlistItems(sl);
+    if (!items[i]) return;
+    items[i].versionId = versionId || null;
+    sl.items = items;
+    delete sl.songIds;
     saveCurrentSetlist(sl);
   }
 
@@ -1525,13 +1594,14 @@
       openSetlistBuilder(state.editingSetlistId);
       return;
     }
-    if (!(sl.songIds || []).length){
+    const items = setlistItems(sl);
+    if (!items.length){
       toast('Add songs to this setlist first');
       return;
     }
     const index = 0;
-    const songId = sl.songIds[index];
-    const versionId = defaultVersionId(state.songs[songId]);
+    const songId = items[index].songId;
+    const versionId = resolveVersionId(state.songs[songId], items[index].versionId);
     Store.set('live', { setlistId: state.editingSetlistId, index: index, songId: songId, versionId: versionId, updatedAt: Date.now() });
     openChartFromSetlist(state.editingSetlistId, index);
   }
@@ -1554,12 +1624,13 @@
 
   function openChartFromSetlist(setlistId, index){
     const sl = state.setlists[setlistId];
-    if (!sl || !sl.songIds || !sl.songIds[index]) return;
-    const songId = sl.songIds[index];
+    const items = setlistItems(sl);
+    if (!sl || !items[index]) return;
+    const songId = items[index].songId;
     state.chart.setlistId = setlistId;
     state.chart.index = index;
     state.chart.songId = songId;
-    state.chart.versionId = defaultVersionId(state.songs[songId]);
+    state.chart.versionId = resolveVersionId(state.songs[songId], items[index].versionId);
     state.chart.following = !!(state.live && state.live.setlistId === setlistId && state.live.index === index);
     state.chart.pageIndex = 0;
     showScreen('screen-chart');
@@ -1586,6 +1657,13 @@
     const song = state.songs[state.chart.songId];
     document.getElementById('chart-title').textContent = song ? (song.title || 'Untitled') : '';
     document.getElementById('chart-artist').textContent = song ? (song.artist || '') : '';
+    const infoBadge = document.getElementById('chart-info-badge');
+    if (song && song.info){
+      infoBadge.textContent = song.info;
+      infoBadge.classList.remove('hidden');
+    } else {
+      infoBadge.classList.add('hidden');
+    }
 
     const select = document.getElementById('version-select');
     select.innerHTML = '';
@@ -1626,7 +1704,7 @@
     const next = document.getElementById('nav-next');
     const sl = state.chart.setlistId ? state.setlists[state.chart.setlistId] : null;
     const hasSetlist = !!sl && state.chart.index !== null && state.chart.index !== undefined;
-    const songCount = hasSetlist ? (sl.songIds || []).length : 0;
+    const songCount = hasSetlist ? setlistItems(sl).length : 0;
 
     const atFirstPage = state.chart.pageIndex <= 0;
     const atLastPage = state.chart.pageIndex >= state.chart.totalPages - 1;
@@ -1661,11 +1739,11 @@
   function navigateSong(dir){
     const sl = state.chart.setlistId ? state.setlists[state.chart.setlistId] : null;
     if (!sl) return;
-    const count = (sl.songIds || []).length;
+    const items = setlistItems(sl);
     const newIndex = state.chart.index + dir;
-    if (newIndex < 0 || newIndex >= count) return;
-    const songId = sl.songIds[newIndex];
-    const versionId = defaultVersionId(state.songs[songId]);
+    if (newIndex < 0 || newIndex >= items.length) return;
+    const songId = items[newIndex].songId;
+    const versionId = resolveVersionId(state.songs[songId], items[newIndex].versionId);
 
     state.chart.index = newIndex;
     state.chart.songId = songId;

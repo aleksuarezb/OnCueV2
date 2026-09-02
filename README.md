@@ -49,9 +49,16 @@ Deliberately simple, by design (see the project brief this was built from):
 
 - A song has one or more **versions**, each just a label (`"D"`, `"Capo 3"`, `"Numbers"`, …) and a plain-text block, typed/pasted exactly as it should appear on stage.
 - There is **no chord parsing, auto-transpose, or computed layout** of any kind. What's typed is what's shown, character for character.
-- A version labeled `"Numbers"` (case-insensitive) is shown by default when present, since it lets anyone play regardless of key; otherwise the first version is shown.
-- `[Section Header]` lines (e.g. `[Verse 1]`) split the chart into blocks for the two-column layout; everything else renders as-is.
-- If a song is too long to fit one screen, it's split into multiple full-screen **pages** (each its own 1- or 2-column spread) rather than letting a single page scroll — swipe or use the arrows to move between pages, then automatically on to the next setlist song once you're past a song's last page. See "Rendering" below for how pages are computed.
+- A version labeled `"Numbers"` (case-insensitive) is shown by default when present, since it lets anyone play regardless of key; otherwise the first version is shown. This is always true for a song opened standalone from the Library — see "Per-setlist key" below for the one place that default can be overridden.
+- `[Section Header]` lines (e.g. `[Verse 1]`) and common bare headers written without brackets (`INTRO`, `VERSE 1`, `PRE-CHORUS`, etc.) render bold; everything else renders as-is.
+- If a song is too long to fit one screen, it's split into multiple full-screen **pages** rather than letting a single page scroll — swipe or use the arrows to move between pages, then automatically on to the next setlist song once you're past a song's last page. See "Rendering" below for how pages are computed.
+- A song's **title, artist, tags**, and an optional freeform **info line** (e.g. `Key - C | Tempo - 64 | Time - 4/4`) are separate metadata fields, entered in the editor alongside the title/artist — not typed into the chart text. The info line shows next to the song title in the chart screen's top bar instead of taking up a line inside the paginated chord content.
+
+### Per-setlist key
+
+Each song *within a setlist* can have its own default version ("Key") — a small dropdown next to a multi-version song in the setlist builder, defaulting to "Default (Numbers)". This only matters inside that setlist: opening the same song standalone from the Library, or adding it to a different setlist, still defaults to Numbers (or the first version) as usual. The chosen key is resolved to an actual version the moment the MD navigates to or goes live on that song, so Firebase's `/live` pointer always carries a concrete version id — Viewers don't need to know anything about setlist-level overrides. If an overridden version is later deleted from the song, it silently falls back to the song's normal default rather than showing a blank chart.
+
+Setlists store this as `items: [{songId, versionId}]` (`versionId: null` = no override). Older setlists saved before this feature only have a flat `songIds: [id, ...]` array; that's still read correctly (each entry treated as `{songId: id, versionId: null}`) and gets upgraded to `items` automatically the next time that setlist is edited — no manual migration needed.
 
 ### Whitespace integrity
 
