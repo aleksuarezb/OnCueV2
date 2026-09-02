@@ -704,11 +704,36 @@
     return 'id' + Date.now().toString(36) + Math.random().toString(36).slice(2,8);
   }
 
+  function expandTabsInLine(line, tabSize){
+    // A textarea renders \t expanded to the next tab-stop column (browsers
+    // default tab-size to 8), which is what makes tab-aligned charts look
+    // correct while editing. Collapsing each tab to a single space instead
+    // of to its real column width would shift everything after it left the
+    // moment it's saved, so expand to real spaces at the same tab-stops
+    // the browser was already displaying.
+    let result = '';
+    let col = 0;
+    for (const ch of line){
+      if (ch === '\t'){
+        const spaces = tabSize - (col % tabSize);
+        result += ' '.repeat(spaces);
+        col += spaces;
+      } else {
+        result += ch;
+        col += 1;
+      }
+    }
+    return result;
+  }
+
   function normalizeWhitespace(text){
-    // Collapse anything whitespace-like (NBSP, tabs, etc.) except newlines
-    // into a plain ASCII space, so saved text is portable and renders the
-    // same everywhere, not just in this app's own renderer.
-    return (text || '').replace(/[^\S\n]/g, ' ');
+    // Expand tabs to real spaces first (preserving the column alignment a
+    // textarea was already showing), then collapse anything else
+    // whitespace-like (NBSP, etc.) except newlines into a plain ASCII
+    // space, so saved text is portable and renders the same everywhere,
+    // not just in this app's own renderer.
+    const tabsExpanded = (text || '').split('\n').map(function(line){ return expandTabsInLine(line, 8); }).join('\n');
+    return tabsExpanded.replace(/[^\S\n]/g, ' ');
   }
 
   function escapeHtml(s){
