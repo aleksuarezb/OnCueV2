@@ -344,6 +344,16 @@
   .chart-title-row{ display:flex; align-items:baseline; gap:8px; min-width:0; }
   .chart-title{ flex:0 1 auto; min-width:0; font-size:16px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .chart-info-badge{ flex:0 0 auto; font-size:11px; font-weight:600; color:var(--chart-text-dim); white-space:nowrap; }
+  .chart-key-badge{
+    flex:0 0 auto; font-size:11px; font-weight:700; white-space:nowrap;
+    color:var(--chart-chord); background:rgba(74,158,255,0.14);
+    border:1px solid var(--chart-chord); border-radius:10px; padding:2px 8px;
+  }
+  .chart-key-select{
+    flex:0 0 auto; font-size:11px; font-weight:700; white-space:nowrap;
+    color:var(--chart-chord); background:rgba(74,158,255,0.14);
+    border:1px solid var(--chart-chord); border-radius:10px; padding:2px 8px;
+  }
   .chart-artist{ font-size:12px; color:var(--chart-text-dim); }
   .chart-controls{ display:flex; align-items:center; gap:6px; }
   .version-select{
@@ -484,6 +494,8 @@
           <li><b>Add a song</b> (MD only): Library → "+ New Song". Enter a title, then add one or more chart versions — type the chart exactly as it should look on stage. A version named "Numbers" is shown by default.</li>
           <li><b>Build a setlist</b> (MD only): Setlists → "+ New Setlist" → add songs from the library, reorder with the arrows.</li>
           <li><b>Go live</b> (MD only): open a setlist and tap "Go Live" — every Viewer who's following jumps to that song automatically.</li>
+          <li><b>Announced key</b> (MD only, in setlist mode): the badge beside the song title is the key the band is playing this song in — tap it to change it. Every device sees this. It's separate from...</li>
+          <li><b>Your own view</b> (top-right dropdown): pick a different chart version for yourself — e.g. a capo chart — without changing what anyone else sees. Your choice carries over automatically to any later song that has a matching version.</li>
           <li><b>Navigate:</b> swipe left/right on the chart, or use the arrows on the right edge — first through a long song's own pages, then on to the next setlist song.</li>
           <li><b>Force a column break:</b> if a verse gets split awkwardly across a column, put a line containing just <code>---</code> right before it in the chart text — it forces a break there and never shows on stage.</li>
           <li><b>Chart modes:</b> tap the ☀︎ icon on the chart screen to switch between dark and light display.</li>
@@ -557,11 +569,13 @@
           <div class="chart-title-row">
             <div id="chart-title" class="chart-title"></div>
             <div id="chart-info-badge" class="chart-info-badge hidden"></div>
+            <span id="chart-key-badge" class="chart-key-badge hidden"></span>
+            <select id="chart-key-select" class="chart-key-select hidden"></select>
           </div>
           <div id="chart-artist" class="chart-artist"></div>
         </div>
         <div class="chart-controls">
-          <select id="version-select" class="version-select"></select>
+          <select id="version-select" class="version-select" title="Your view only — doesn't affect what anyone else sees"></select>
           <button id="btn-light-toggle" class="btn btn-ghost" title="Toggle chart light mode">☀︎</button>
           <button id="btn-live-toggle" class="btn btn-live md-only hidden">🔴 Go Live</button>
         </div>
@@ -608,7 +622,7 @@
   // Bump this on every deploy, in lockstep with BUILD_ID in sw.js, so the
   // small badge on the landing screen tells you at a glance whether a
   // device has picked up the latest push.
-  const APP_VERSION = "2026-09-03T03-00-00";
+  const APP_VERSION = "2026-09-03T05-00-00";
 
   /* =========================================================
      STORE — a tiny path-based data layer with two backends:
@@ -813,13 +827,41 @@
     return (sl.songIds || []).map(function(id){ return { songId: id, versionId: null }; });
   }
 
-  // Resolves a setlist entry's chosen key to an actual version id, falling
-  // back to the song's default if no override is set OR the overridden
-  // version no longer exists on the song (e.g. it was deleted in the
-  // editor after being picked here).
+  // Resolves a setlist entry's chosen "announced key" to an actual version
+  // id, falling back to the song's default if no override is set OR the
+  // overridden version no longer exists on the song (e.g. it was deleted in
+  // the editor after being picked here). This is the key the MD sets — see
+  // resolveDisplayVersionId for what an individual device actually shows.
   function resolveVersionId(song, versionId){
     if (versionId && song && song.versions && song.versions[versionId]) return versionId;
     return defaultVersionId(song);
+  }
+
+  // A device's personal chart preference — e.g. a guitarist who always
+  // wants the "Capo 3" version, whatever song is playing. This lives on the
+  // device (localStorage), by version LABEL rather than id, so it carries
+  // over from song to song and setlist to setlist as long as a song happens
+  // to have a matching-labeled version. It's the escape hatch from the
+  // MD's announced key: "the actual key the individual musician is playing
+  // in can stay at the top right because they may have a capo."
+  const PREFERRED_VERSION_LABEL_KEY = 'oncue_preferred_version_label';
+
+  // What THIS device should render for a song within a setlist: this
+  // device's own preferred version label if the song has a matching
+  // version, otherwise the MD's announced key for this setlist entry
+  // (item.versionId, resolved via resolveVersionId), otherwise the song's
+  // own default. Standalone viewing (setlistId falsy) ignores all of this
+  // and always uses the song's default — untouched by any setlist concept.
+  function resolveDisplayVersionId(song, setlistId, item){
+    if (!setlistId) return defaultVersionId(song);
+    const preferredLabel = localStorage.getItem(PREFERRED_VERSION_LABEL_KEY);
+    if (preferredLabel){
+      const match = orderedVersions(song).find(function(v){
+        return (v.label || '').trim().toLowerCase() === preferredLabel.trim().toLowerCase();
+      });
+      if (match) return match.id;
+    }
+    return resolveVersionId(song, item ? item.versionId : null);
   }
 
   const CHORD_TOKEN = /^[\(\[]?[A-G](#|b)?(maj|min|m|dim|aug|sus[24]?|add)?[0-9]*(\/[A-G](#|b)?)?[\)\]]?$/i;
@@ -1536,7 +1578,7 @@
     wrap.querySelectorAll('.key-select').forEach(function(sel){
       sel.addEventListener('click', function(e){ e.stopPropagation(); });
       sel.addEventListener('change', function(){
-        setSetlistItemVersion(parseInt(sel.dataset.keyIndex, 10), sel.value || null);
+        setSetlistItemVersion(state.editingSetlistId, parseInt(sel.dataset.keyIndex, 10), sel.value || null);
       });
     });
   }
@@ -1576,14 +1618,19 @@
     saveCurrentSetlist(sl);
   }
 
-  function setSetlistItemVersion(i, versionId){
-    const sl = currentSetlist();
+  // Takes an explicit setlistId (rather than reading currentSetlist()/
+  // state.editingSetlistId) so this can be called both from the setlist
+  // builder and from the quick key-select on the chart screen itself,
+  // without the chart screen needing to hijack the builder's "currently
+  // being edited" state.
+  function setSetlistItemVersion(setlistId, i, versionId){
+    const sl = state.setlists[setlistId];
     const items = setlistItems(sl);
-    if (!items[i]) return;
+    if (!sl || !items[i]) return;
     items[i].versionId = versionId || null;
     sl.items = items;
     delete sl.songIds;
-    saveCurrentSetlist(sl);
+    Store.set('setlists/' + setlistId, sl);
   }
 
   function renderBuilderPicker(){
@@ -1638,8 +1685,13 @@
     }
     const index = 0;
     const songId = items[index].songId;
-    const versionId = resolveVersionId(state.songs[songId], items[index].versionId);
-    Store.set('live', { setlistId: state.editingSetlistId, index: index, songId: songId, versionId: versionId, updatedAt: Date.now() });
+    // Note: no versionId here — which song is live still syncs to everyone,
+    // but which chart version each device actually displays is now a local
+    // decision (see resolveDisplayVersionId), not something MD's "Go Live"
+    // pushes. The MD's chosen key for this setlist entry still shows in the
+    // top bar for everyone via the setlist data itself (items[].versionId),
+    // synced independently of /live.
+    Store.set('live', { setlistId: state.editingSetlistId, index: index, songId: songId, updatedAt: Date.now() });
     openChartFromSetlist(state.editingSetlistId, index);
   }
 
@@ -1667,7 +1719,7 @@
     state.chart.setlistId = setlistId;
     state.chart.index = index;
     state.chart.songId = songId;
-    state.chart.versionId = resolveVersionId(state.songs[songId], items[index].versionId);
+    state.chart.versionId = resolveDisplayVersionId(state.songs[songId], setlistId, items[index]);
     state.chart.following = !!(state.live && state.live.setlistId === setlistId && state.live.index === index);
     state.chart.pageIndex = 0;
     showScreen('screen-chart');
@@ -1676,10 +1728,13 @@
 
   function openChartFromLive(){
     if (!state.live || !state.live.songId) return;
+    const sl = state.setlists[state.live.setlistId];
+    const items = setlistItems(sl);
+    const item = items[state.live.index];
     state.chart.setlistId = state.live.setlistId;
     state.chart.index = state.live.index;
     state.chart.songId = state.live.songId;
-    state.chart.versionId = state.live.versionId || defaultVersionId(state.songs[state.live.songId]);
+    state.chart.versionId = resolveDisplayVersionId(state.songs[state.live.songId], state.live.setlistId, item);
     state.chart.following = true;
     state.chart.pageIndex = 0;
     showScreen('screen-chart');
@@ -1688,6 +1743,67 @@
 
   function isDrivingLive(){
     return state.role === 'md' && state.live && state.chart.setlistId && state.live.setlistId === state.chart.setlistId;
+  }
+
+  // The MD-set "key we're playing this in" for the current setlist entry —
+  // shown as a read-only badge for Viewers, and as an editable pill-select
+  // for MD (writing straight back to the setlist's own data, independent of
+  // /live, so it updates for everyone the moment MD changes it and persists
+  // as part of the setlist itself). Hidden entirely outside setlist context,
+  // per spec — standalone viewing has nothing to announce a key for.
+  function renderAnnouncedKey(song){
+    const badge = document.getElementById('chart-key-badge');
+    const select = document.getElementById('chart-key-select');
+
+    if (!state.chart.setlistId){
+      badge.classList.add('hidden');
+      select.classList.add('hidden');
+      return;
+    }
+
+    const sl = state.setlists[state.chart.setlistId];
+    const items = setlistItems(sl);
+    const item = items[state.chart.index];
+    const versions = song ? orderedVersions(song) : [];
+    const announcedVersionId = resolveVersionId(song, item ? item.versionId : null);
+
+    if (state.role === 'md' && versions.length > 1){
+      badge.classList.add('hidden');
+      select.classList.remove('hidden');
+      select.innerHTML = '';
+      versions.forEach(function(v){
+        const opt = document.createElement('option');
+        opt.value = v.id;
+        opt.textContent = 'Key: ' + (v.label || 'Untitled');
+        if (v.id === announcedVersionId) opt.selected = true;
+        select.appendChild(opt);
+      });
+      select.dataset.setlistId = state.chart.setlistId;
+      select.dataset.index = state.chart.index;
+    } else {
+      select.classList.add('hidden');
+      const announcedVersion = song && song.versions ? song.versions[announcedVersionId] : null;
+      if (announcedVersion){
+        badge.textContent = 'Key: ' + (announcedVersion.label || 'Untitled');
+        badge.classList.remove('hidden');
+      } else {
+        badge.classList.add('hidden');
+      }
+    }
+  }
+
+  // Re-resolves what THIS device should display for the current song —
+  // called when the setlist data changes (e.g. the MD just changed the
+  // announced key) so a device with no personal version preference follows
+  // along, while a device WITH a preference (see resolveDisplayVersionId)
+  // correctly stays put.
+  function refreshChartVersionForCurrentSong(){
+    if (!state.chart.setlistId || !state.chart.songId) return;
+    const sl = state.setlists[state.chart.setlistId];
+    const items = setlistItems(sl);
+    const item = items[state.chart.index];
+    const song = state.songs[state.chart.songId];
+    state.chart.versionId = resolveDisplayVersionId(song, state.chart.setlistId, item);
   }
 
   function renderChartScreen(){
@@ -1701,6 +1817,8 @@
     } else {
       infoBadge.classList.add('hidden');
     }
+
+    renderAnnouncedKey(song);
 
     const select = document.getElementById('version-select');
     select.innerHTML = '';
@@ -1780,11 +1898,10 @@
     const newIndex = state.chart.index + dir;
     if (newIndex < 0 || newIndex >= items.length) return;
     const songId = items[newIndex].songId;
-    const versionId = resolveVersionId(state.songs[songId], items[newIndex].versionId);
 
     state.chart.index = newIndex;
     state.chart.songId = songId;
-    state.chart.versionId = versionId;
+    state.chart.versionId = resolveDisplayVersionId(state.songs[songId], state.chart.setlistId, items[newIndex]);
     // Paging backward past a song's start should land on its LAST page (like
     // flipping back through a songbook), not page 1 — renderChart() clamps
     // this to the new song's real page count once it knows it.
@@ -1792,7 +1909,7 @@
 
     if (state.role === 'md'){
       if (isDrivingLive()){
-        Store.set('live', { setlistId: state.chart.setlistId, index: newIndex, songId: songId, versionId: versionId, updatedAt: Date.now() });
+        Store.set('live', { setlistId: state.chart.setlistId, index: newIndex, songId: songId, updatedAt: Date.now() });
       }
     } else {
       state.chart.following = false;
@@ -1823,14 +1940,22 @@
     renderNavArrows();
   }
 
+  // The top-right version-select is now a purely personal, per-device
+  // choice — it never pushes to Firebase and never affects song-navigation
+  // "following," for MD or Viewer alike. Changing it in setlist mode also
+  // remembers the chosen LABEL (see resolveDisplayVersionId) as this
+  // device's standing preference, so e.g. a guitarist who picks "Capo 3"
+  // for one song gets it automatically on every later song that has a
+  // "Capo 3" version too.
   function changeVersion(versionId){
     state.chart.versionId = versionId;
     state.chart.pageIndex = 0;
-    if (state.role === 'md' && isDrivingLive()){
-      Store.set('live/versionId', versionId);
-      Store.set('live/updatedAt', Date.now());
-    } else if (state.role !== 'md'){
-      state.chart.following = false;
+    if (state.chart.setlistId){
+      const song = state.songs[state.chart.songId];
+      const version = song && song.versions ? song.versions[versionId] : null;
+      if (version && version.label){
+        localStorage.setItem(PREFERRED_VERSION_LABEL_KEY, version.label);
+      }
     }
     renderChartScreen();
   }
@@ -1853,10 +1978,13 @@
       if (state.role !== 'md' && state.chart.following &&
           document.getElementById('screen-chart').classList.contains('active')){
         if (live && live.songId){
+          const sl = state.setlists[live.setlistId];
+          const items = setlistItems(sl);
+          const item = items[live.index];
           state.chart.setlistId = live.setlistId;
           state.chart.index = live.index;
           state.chart.songId = live.songId;
-          state.chart.versionId = live.versionId;
+          state.chart.versionId = resolveDisplayVersionId(state.songs[live.songId], live.setlistId, item);
           state.chart.pageIndex = 0;
           renderChartScreen();
         }
@@ -1885,6 +2013,15 @@
       if (document.getElementById('screen-setlists').classList.contains('active')) renderSetlists();
       if (document.getElementById('screen-setlist-builder').classList.contains('active')) renderSetlistBuilder();
       if (document.getElementById('screen-landing').classList.contains('active')) renderLandingSetlistOptions();
+      // A setlist edit elsewhere (most notably the MD changing the
+      // announced key) should reach a device already viewing that song —
+      // re-resolve what this device shows (a device with no personal
+      // version preference follows the new key; one with a preference
+      // correctly stays put) and refresh the badge/select either way.
+      if (document.getElementById('screen-chart').classList.contains('active') && state.chart.setlistId){
+        refreshChartVersionForCurrentSong();
+        renderChartScreen();
+      }
       renderNavArrows();
     });
   }
@@ -2030,12 +2167,14 @@
           setlistId: state.chart.setlistId,
           index: state.chart.index,
           songId: state.chart.songId,
-          versionId: state.chart.versionId,
           updatedAt: Date.now()
         });
         toast('You are live');
       }
       renderChartControls();
+    });
+    document.getElementById('chart-key-select').addEventListener('change', function(e){
+      setSetlistItemVersion(e.target.dataset.setlistId, parseInt(e.target.dataset.index, 10), e.target.value || null);
     });
     document.getElementById('nav-prev').addEventListener('click', function(){ navigateChart(-1); });
     document.getElementById('nav-next').addEventListener('click', function(){ navigateChart(1); });
