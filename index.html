@@ -498,8 +498,8 @@
           <li><b>Build a setlist</b> (MD only): Setlists → "+ New Setlist" → add songs from the library, reorder with the arrows.</li>
           <li><b>Browsing is private.</b> Swiping or tapping through songs — in a setlist or from the Library — only moves your own screen. Nothing is sent to anyone else until you explicitly push.</li>
           <li><b>Push to Everyone</b> (MD only): the button on the chart screen sends exactly the song you're looking at to every Viewer who's following, asking you to confirm first. Tap it again ("Stop Live") to stop. Turn the confirmation off in Settings (⚙) if you'd rather it push instantly.</li>
-          <li><b>Announced key</b> (MD only, in setlist mode): the badge beside the song title is the key the band is playing this song in — tap it to change it. Every device sees this, independent of what's pushed live. It's separate from...</li>
-          <li><b>Your own view</b> (top-right dropdown): pick a different chart version for yourself — e.g. a capo chart — without changing what anyone else sees. Your choice carries over automatically to any later song that has a matching version.</li>
+          <li><b>Current Key</b> (in setlist mode): the badge beside the song title is the key the whole band is playing this song in, regardless of anyone's capo. MD can tap it to change it; Viewers see it read-only. Every device sees this, independent of what's pushed live. It's separate from...</li>
+          <li><b>Chart Key</b> (top-right dropdown): pick a different chart version for yourself — e.g. a capo chart — without changing what anyone else sees. Your choice carries over automatically to any later song that has a matching version.</li>
           <li><b>Navigate:</b> swipe left/right on the chart, or use the arrows on the right edge — first through a long song's own pages, then on to the next setlist song.</li>
           <li><b>Force a column break:</b> if a verse gets split awkwardly across a column, put a line containing just <code>---</code> right before it in the chart text — it forces a break there and never shows on stage.</li>
           <li><b>Chart modes:</b> tap the ☀︎ icon on the chart screen to switch between dark and light display.</li>
@@ -590,7 +590,7 @@
           <div id="chart-artist" class="chart-artist"></div>
         </div>
         <div class="chart-controls">
-          <select id="version-select" class="version-select" title="Your view only — doesn't affect what anyone else sees"></select>
+          <select id="version-select" class="version-select" title="Chart Key — your own view, doesn't affect what anyone else sees"></select>
           <button id="btn-light-toggle" class="btn btn-ghost" title="Toggle chart light mode">☀︎</button>
           <button id="btn-live-toggle" class="btn btn-live md-only hidden">🔴 Go Live</button>
         </div>
@@ -637,7 +637,7 @@
   // Bump this on every deploy, in lockstep with BUILD_ID in sw.js, so the
   // small badge on the landing screen tells you at a glance whether a
   // device has picked up the latest push.
-  const APP_VERSION = "2026-09-03T07-00-00";
+  const APP_VERSION = "2026-09-03T08-00-00";
 
   /* =========================================================
      STORE — a tiny path-based data layer with two backends:
@@ -1791,12 +1791,15 @@
     return !state.live.setlistId && state.live.songId === state.chart.songId;
   }
 
-  // The MD-set "key we're playing this in" for the current setlist entry —
-  // shown as a read-only badge for Viewers, and as an editable pill-select
-  // for MD (writing straight back to the setlist's own data, independent of
-  // /live, so it updates for everyone the moment MD changes it and persists
-  // as part of the setlist itself). Hidden entirely outside setlist context,
-  // per spec — standalone viewing has nothing to announce a key for.
+  // "Current Key" — the key the whole band is actually playing this song
+  // in, regardless of any individual musician's capo. MD-only to change
+  // (Viewers see it read-only); it writes straight back to the setlist's
+  // own data, independent of /live, so it updates for everyone the instant
+  // the MD changes it and persists as part of the setlist itself. Hidden
+  // entirely outside setlist context — standalone viewing has nothing to
+  // announce a key for. This is distinct from "Chart Key" (the top-right
+  // version-select): that's a personal, per-device choice of which chart
+  // text to look at (e.g. a capo chart), and never affects what this shows.
   function renderAnnouncedKey(song){
     const badge = document.getElementById('chart-key-badge');
     const select = document.getElementById('chart-key-select');
@@ -1820,7 +1823,7 @@
       versions.forEach(function(v){
         const opt = document.createElement('option');
         opt.value = v.id;
-        opt.textContent = 'Key: ' + (v.label || 'Untitled');
+        opt.textContent = 'Current Key: ' + (v.label || 'Untitled');
         if (v.id === announcedVersionId) opt.selected = true;
         select.appendChild(opt);
       });
@@ -1830,7 +1833,7 @@
       select.classList.add('hidden');
       const announcedVersion = song && song.versions ? song.versions[announcedVersionId] : null;
       if (announcedVersion){
-        badge.textContent = 'Key: ' + (announcedVersion.label || 'Untitled');
+        badge.textContent = 'Current Key: ' + (announcedVersion.label || 'Untitled');
         badge.classList.remove('hidden');
       } else {
         badge.classList.add('hidden');
@@ -1872,7 +1875,7 @@
     versions.forEach(function(v){
       const opt = document.createElement('option');
       opt.value = v.id;
-      opt.textContent = v.label || 'Untitled';
+      opt.textContent = 'Chart Key: ' + (v.label || 'Untitled');
       if (v.id === state.chart.versionId) opt.selected = true;
       select.appendChild(opt);
     });
