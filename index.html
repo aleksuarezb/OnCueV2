@@ -205,6 +205,8 @@
   }
   .help-list{ padding-left:18px; display:flex; flex-direction:column; gap:10px; font-size:13.5px; color:var(--text-dim); line-height:1.4; }
   .help-list b{ color:var(--text); }
+  .settings-row{ display:flex; align-items:center; gap:10px; font-size:14px; color:var(--text); padding:6px 0; }
+  .settings-row input{ width:18px; height:18px; }
 
   /* ---------- library ---------- */
   .az-index{
@@ -437,6 +439,7 @@
     <div class="header-spacer"></div>
     <div id="header-live-pill" class="live-pill-header hidden">● LIVE</div>
     <span id="sync-dot" class="sync-dot" title="Sync status"></span>
+    <button id="btn-settings" class="btn btn-ghost md-only" title="Settings">⚙</button>
     <button id="role-btn" class="role-btn">Viewer</button>
   </header>
 
@@ -490,17 +493,29 @@
         <button id="help-close" class="modal-close">✕</button>
         <h2>Help &amp; User Guide</h2>
         <ol class="help-list">
-          <li><b>Pick your role.</b> MD can add songs, build setlists, and push the live chart to everyone. Viewer follows along automatically.</li>
+          <li><b>Pick your role.</b> MD can add songs, build setlists, and push a song to everyone. Viewer follows along automatically once something's been pushed.</li>
           <li><b>Add a song</b> (MD only): Library → "+ New Song". Enter a title, then add one or more chart versions — type the chart exactly as it should look on stage. A version named "Numbers" is shown by default.</li>
           <li><b>Build a setlist</b> (MD only): Setlists → "+ New Setlist" → add songs from the library, reorder with the arrows.</li>
-          <li><b>Go live</b> (MD only): open a setlist and tap "Go Live" — every Viewer who's following jumps to that song automatically.</li>
-          <li><b>Announced key</b> (MD only, in setlist mode): the badge beside the song title is the key the band is playing this song in — tap it to change it. Every device sees this. It's separate from...</li>
+          <li><b>Browsing is private.</b> Swiping or tapping through songs — in a setlist or from the Library — only moves your own screen. Nothing is sent to anyone else until you explicitly push.</li>
+          <li><b>Push to Everyone</b> (MD only): the button on the chart screen sends exactly the song you're looking at to every Viewer who's following, asking you to confirm first. Tap it again ("Stop Live") to stop. Turn the confirmation off in Settings (⚙) if you'd rather it push instantly.</li>
+          <li><b>Announced key</b> (MD only, in setlist mode): the badge beside the song title is the key the band is playing this song in — tap it to change it. Every device sees this, independent of what's pushed live. It's separate from...</li>
           <li><b>Your own view</b> (top-right dropdown): pick a different chart version for yourself — e.g. a capo chart — without changing what anyone else sees. Your choice carries over automatically to any later song that has a matching version.</li>
           <li><b>Navigate:</b> swipe left/right on the chart, or use the arrows on the right edge — first through a long song's own pages, then on to the next setlist song.</li>
           <li><b>Force a column break:</b> if a verse gets split awkwardly across a column, put a line containing just <code>---</code> right before it in the chart text — it forces a break there and never shows on stage.</li>
           <li><b>Chart modes:</b> tap the ☀︎ icon on the chart screen to switch between dark and light display.</li>
           <li><b>Switch identity</b> anytime by tapping the OnCue logo in the header.</li>
         </ol>
+      </div>
+    </div>
+
+    <div id="settings-modal" class="modal-overlay hidden">
+      <div class="modal-card">
+        <button id="settings-close" class="modal-close">✕</button>
+        <h2>Settings</h2>
+        <label class="settings-row">
+          <input type="checkbox" id="setting-confirm-push">
+          <span>Ask before pushing a song to everyone</span>
+        </label>
       </div>
     </div>
 
@@ -622,7 +637,7 @@
   // Bump this on every deploy, in lockstep with BUILD_ID in sw.js, so the
   // small badge on the landing screen tells you at a glance whether a
   // device has picked up the latest push.
-  const APP_VERSION = "2026-09-03T05-00-00";
+  const APP_VERSION = "2026-09-03T07-00-00";
 
   /* =========================================================
      STORE — a tiny path-based data layer with two backends:
@@ -845,6 +860,18 @@
   // MD's announced key: "the actual key the individual musician is playing
   // in can stay at the top right because they may have a capo."
   const PREFERRED_VERSION_LABEL_KEY = 'oncue_preferred_version_label';
+
+  // Whether pushing a song to everyone asks for confirmation first (default
+  // yes). Per-device setting, exposed in the Settings modal — some MDs just
+  // want the push to go through instantly without a prompt every time.
+  const CONFIRM_BEFORE_PUSH_KEY = 'oncue_confirm_before_push';
+  function getConfirmBeforePush(){
+    const v = localStorage.getItem(CONFIRM_BEFORE_PUSH_KEY);
+    return v === null ? true : v === '1';
+  }
+  function setConfirmBeforePush(val){
+    localStorage.setItem(CONFIRM_BEFORE_PUSH_KEY, val ? '1' : '0');
+  }
 
   // What THIS device should render for a song within a setlist: this
   // device's own preferred version label if the song has a matching
@@ -1685,14 +1712,23 @@
     }
     const index = 0;
     const songId = items[index].songId;
+    const song = state.songs[songId];
+    const title = song ? (song.title || 'Untitled') : 'this song';
     // Note: no versionId here — which song is live still syncs to everyone,
     // but which chart version each device actually displays is now a local
-    // decision (see resolveDisplayVersionId), not something MD's "Go Live"
-    // pushes. The MD's chosen key for this setlist entry still shows in the
-    // top bar for everyone via the setlist data itself (items[].versionId),
-    // synced independently of /live.
-    Store.set('live', { setlistId: state.editingSetlistId, index: index, songId: songId, updatedAt: Date.now() });
-    openChartFromSetlist(state.editingSetlistId, index);
+    // decision (see resolveDisplayVersionId), not something pushing here
+    // controls. The MD's chosen key for this setlist entry still shows in
+    // the top bar for everyone via the setlist data itself
+    // (items[].versionId), synced independently of /live.
+    const doPush = function(){
+      Store.set('live', { setlistId: state.editingSetlistId, index: index, songId: songId, updatedAt: Date.now() });
+      openChartFromSetlist(state.editingSetlistId, index);
+    };
+    if (getConfirmBeforePush()){
+      if (window.confirm('Push "' + title + '" to everyone now?')) doPush();
+    } else {
+      doPush();
+    }
   }
 
   /* =========================================================
@@ -1741,8 +1777,18 @@
     renderChartScreen();
   }
 
-  function isDrivingLive(){
-    return state.role === 'md' && state.live && state.chart.setlistId && state.live.setlistId === state.chart.setlistId;
+  // Whether the song/position currently on screen is exactly what's pushed
+  // live right now — drives the Push/Stop button's label. Note this is no
+  // longer tied to setlist navigation: swiping through a setlist never
+  // pushes on its own (see navigateSong), so this can easily be false even
+  // for the MD who originally pushed the live song, once they've swiped
+  // ahead to look at something else.
+  function isCurrentlyLive(){
+    if (!state.live || !state.live.songId) return false;
+    if (state.chart.setlistId){
+      return state.live.setlistId === state.chart.setlistId && state.live.index === state.chart.index;
+    }
+    return !state.live.setlistId && state.live.songId === state.chart.songId;
   }
 
   // The MD-set "key we're playing this in" for the current setlist entry —
@@ -1844,11 +1890,11 @@
     chartScreen.classList.toggle('chart-light', state.chart.chartLight);
 
     const liveBtn = document.getElementById('btn-live-toggle');
-    if (state.role === 'md' && state.chart.setlistId){
+    if (state.role === 'md' && state.chart.songId){
       liveBtn.classList.remove('hidden');
-      const driving = isDrivingLive();
-      liveBtn.textContent = driving ? '⏹ Stop Live' : '🔴 Go Live';
-      liveBtn.classList.toggle('is-active', driving);
+      const live = isCurrentlyLive();
+      liveBtn.textContent = live ? '⏹ Stop Live' : '🔴 Push to Everyone';
+      liveBtn.classList.toggle('is-active', live);
     } else {
       liveBtn.classList.add('hidden');
     }
@@ -1889,8 +1935,11 @@
 
   // Moves to the next/previous SONG in the active setlist (a no-op when
   // there's no setlist context, or already at the first/last song). This is
-  // the only navigation that pushes over Firebase when the MD is driving
-  // live — see navigateChart() below for the page-vs-song precedence.
+  // now purely local for MD and Viewer alike — browsing a setlist never
+  // pushes to anyone on its own; only the explicit "Push to Everyone"
+  // button (see isCurrentlyLive/the btn-live-toggle handler) does that, with
+  // a confirmation. See navigateChart() below for the page-vs-song
+  // precedence.
   function navigateSong(dir){
     const sl = state.chart.setlistId ? state.setlists[state.chart.setlistId] : null;
     if (!sl) return;
@@ -1907,11 +1956,7 @@
     // this to the new song's real page count once it knows it.
     state.chart.pageIndex = dir < 0 ? Infinity : 0;
 
-    if (state.role === 'md'){
-      if (isDrivingLive()){
-        Store.set('live', { setlistId: state.chart.setlistId, index: newIndex, songId: songId, updatedAt: Date.now() });
-      }
-    } else {
+    if (state.role !== 'md'){
       state.chart.following = false;
     }
     renderChartScreen();
@@ -2131,6 +2176,19 @@
     document.getElementById('help-modal').addEventListener('click', function(e){
       if (e.target.id === 'help-modal') e.currentTarget.classList.add('hidden');
     });
+    document.getElementById('btn-settings').addEventListener('click', function(){
+      document.getElementById('setting-confirm-push').checked = getConfirmBeforePush();
+      document.getElementById('settings-modal').classList.remove('hidden');
+    });
+    document.getElementById('settings-close').addEventListener('click', function(){
+      document.getElementById('settings-modal').classList.add('hidden');
+    });
+    document.getElementById('settings-modal').addEventListener('click', function(e){
+      if (e.target.id === 'settings-modal') e.currentTarget.classList.add('hidden');
+    });
+    document.getElementById('setting-confirm-push').addEventListener('change', function(e){
+      setConfirmBeforePush(e.target.checked);
+    });
     document.getElementById('landing-passcode').addEventListener('keydown', function(e){
       if (e.key === 'Enter') document.getElementById('btn-landing-continue').click();
     });
@@ -2159,19 +2217,29 @@
     document.getElementById('version-select').addEventListener('change', function(e){ changeVersion(e.target.value); });
     document.getElementById('btn-light-toggle').addEventListener('click', toggleChartLight);
     document.getElementById('btn-live-toggle').addEventListener('click', function(){
-      if (isDrivingLive()){
+      if (isCurrentlyLive()){
         Store.set('live', null);
         toast('Stopped live');
-      } else {
+        renderChartControls();
+        return;
+      }
+      const song = state.songs[state.chart.songId];
+      const title = song ? (song.title || 'Untitled') : 'this song';
+      const doPush = function(){
         Store.set('live', {
-          setlistId: state.chart.setlistId,
-          index: state.chart.index,
+          setlistId: state.chart.setlistId || null,
+          index: state.chart.setlistId ? state.chart.index : null,
           songId: state.chart.songId,
           updatedAt: Date.now()
         });
-        toast('You are live');
+        toast('Pushed to everyone');
+        renderChartControls();
+      };
+      if (getConfirmBeforePush()){
+        if (window.confirm('Push "' + title + '" to everyone now?')) doPush();
+      } else {
+        doPush();
       }
-      renderChartControls();
     });
     document.getElementById('chart-key-select').addEventListener('change', function(e){
       setSetlistItemVersion(e.target.dataset.setlistId, parseInt(e.target.dataset.index, 10), e.target.value || null);

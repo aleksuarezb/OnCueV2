@@ -94,16 +94,16 @@ Page position is **local, per-device, and never synced over Firebase** — diffe
 
 ## Setlist navigation — design decision
 
-**MD's navigation pushes to everyone; a Viewer's swipe/tap only browses locally without disrupting the MD's live position.** Concretely:
+**All browsing is local and silent; only an explicit "Push to Everyone" tap, confirmed first, ever reaches a Viewer.** This app went through two different designs here before landing on this one — worth explaining both the current behavior and why it changed:
 
-- While the MD is driving a setlist live, every swipe/arrow-tap (and version switch) updates Firebase's `/live` pointer, and every following Viewer's screen updates immediately.
-- If a Viewer swipes or taps an arrow, that device detaches from "following" and browses the setlist on its own — it does **not** affect the MD or other viewers. A small "● Live: *Song* — tap to follow" pill appears so they can jump back to the MD's current song at any time.
-- If the MD moves to a different song while a Viewer is detached, the Viewer is **not** yanked away mid-read; the pill's label just updates to point at wherever the MD currently is.
-- Tapping the live banner on the Library screen (or a fresh Viewer session) starts in "following" mode, matching "Viewer receives MD's pushes automatically."
-- An MD can also open a song from a setlist without pressing **Go Live** — that's just a local preview and does not push to anyone until the MD explicitly presses **Go Live** (or turns it off with **Stop Live**).
-- Navigation arrows are hidden entirely for a chart opened outside of any setlist (a standalone song from the library), since there's nothing to navigate between. They also hide/disable at the first/last song in a setlist rather than wrapping around.
+- Swiping or tapping the arrows — through a setlist's songs, through a long song's own pages, or opening a standalone song from the Library — **never by itself sends anything to anyone**. It only moves the screen of the device doing it. An MD can flip through the entire setlist, jump to the Library and back, or preview any song, with zero effect on what Viewers see.
+- The **only** way a song reaches Viewers is the "🔴 Push to Everyone" button on the chart screen (MD only), which is available for whatever song is currently on screen — a setlist song or a standalone Library pick, treated identically. Tapping it asks "Push '*Song*' to everyone now?" before anything changes, unless the MD has turned that off (see Settings below). The button reads "⏹ Stop Live" instead when the song on screen is already the one pushed, and stopping needs no confirmation.
+- Once pushed, a following Viewer's screen updates immediately — same as before. A Viewer who swipes/taps detaches from "following" and browses independently, with a "● Live: *Song* — tap to follow" pill to jump back at any time, and is never yanked away mid-read by anything the MD does elsewhere. Tapping the live banner (Library screen, or a fresh Viewer session) starts in "following" mode.
+- **Settings (⚙, MD only, in the header):** "Ask before pushing a song to everyone" — on by default. Turn it off to make the push button fire instantly with no confirmation, for an MD who'd rather move fast than double-check every time. This is a per-device preference (`localStorage`), not a shared one — each MD's device remembers its own choice.
 
-This was a judgment call favoring "don't disrupt someone mid-read" over strict lockstep; flagging it here per the project brief in case the actual preference differs.
+Earlier this same button auto-pushed on every swipe while "driving live," which meant just glancing ahead at the next song's chart moved everyone else's screen too. That's the opposite of what's wanted in practice — an MD often wants to preview or skip around without disturbing the band — hence the explicit-push-only redesign above.
+
+Navigation arrows are hidden entirely for a chart with no pages left to move through and no setlist context (a standalone song with only one page). They hide/disable at the first/last song in a setlist rather than wrapping around.
 
 ## What was deliberately not built
 
