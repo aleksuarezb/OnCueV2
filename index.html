@@ -221,6 +221,7 @@
     border-radius:8px;
   }
   .az-index button.has-songs{ color:var(--accent); border-color:var(--border); }
+  .az-index button.active{ background:var(--accent); color:#fff; border-color:var(--accent); }
 
   .live-banner{
     margin:0 16px 8px; padding:10px 14px; border-radius:10px;
@@ -643,7 +644,7 @@
   // Bump this on every deploy, in lockstep with BUILD_ID in sw.js, so the
   // small badge on the landing screen tells you at a glance whether a
   // device has picked up the latest push.
-  const APP_VERSION = "2026-09-04T00-00-00";
+  const APP_VERSION = "2026-09-04T01-00-00";
 
   /* =========================================================
      STORE — a tiny path-based data layer with two backends:
@@ -1388,21 +1389,35 @@
     }
   }
 
+  // Tapping a letter in the A-Z index filters the grid to titles starting
+  // with it (tap the same letter again to clear). Independent of the text
+  // search box — typing there clears this, and picking a letter clears the
+  // search box — so only one filter is ever active at a time.
+  let libraryLetterFilter = null;
+
   function renderLibrary(){
     const q = (document.getElementById('search-input').value || '').trim().toLowerCase();
     const grid = document.getElementById('song-grid');
     const az = document.getElementById('az-index');
     const all = songList();
-    const filtered = q ? all.filter(function(s){
-      const hay = [s.title, s.artist, s.tags].filter(Boolean).join(' ').toLowerCase();
-      return hay.indexOf(q) !== -1;
-    }) : all;
+    let filtered = all;
+    if (q){
+      filtered = all.filter(function(s){
+        const hay = [s.title, s.artist, s.tags].filter(Boolean).join(' ').toLowerCase();
+        return hay.indexOf(q) !== -1;
+      });
+    } else if (libraryLetterFilter){
+      filtered = all.filter(function(s){
+        return (s.title || '#').trim().charAt(0).toUpperCase() === libraryLetterFilter;
+      });
+    }
 
     grid.innerHTML = '';
     if (!filtered.length){
       const empty = document.createElement('div');
       empty.className = 'empty-state';
-      empty.textContent = all.length ? 'No songs match your search.' : 'No songs yet. Add one to get started.';
+      empty.textContent = !all.length ? 'No songs yet. Add one to get started.' :
+        (libraryLetterFilter ? 'No songs start with "' + libraryLetterFilter + '".' : 'No songs match your search.');
       grid.appendChild(empty);
     } else {
       filtered.forEach(function(song){
@@ -1441,14 +1456,11 @@
       const b = document.createElement('button');
       b.textContent = l;
       if (present[l]) b.classList.add('has-songs');
+      if (l === libraryLetterFilter) b.classList.add('active');
       b.addEventListener('click', function(){
-        const target = grid.querySelector('.song-card .title');
-        const cards = Array.from(grid.querySelectorAll('.song-card'));
-        const match = cards.find(function(c){
-          const t = c.querySelector('.title').textContent.trim().charAt(0).toUpperCase();
-          return t === l;
-        });
-        if (match) match.scrollIntoView({ block:'center' });
+        libraryLetterFilter = (libraryLetterFilter === l) ? null : l;
+        document.getElementById('search-input').value = '';
+        renderLibrary();
       });
       az.appendChild(b);
     });
@@ -2315,7 +2327,10 @@
       if (e.key === 'Enter') document.getElementById('btn-landing-continue').click();
     });
 
-    document.getElementById('search-input').addEventListener('input', renderLibrary);
+    document.getElementById('search-input').addEventListener('input', function(){
+      libraryLetterFilter = null;
+      renderLibrary();
+    });
     document.getElementById('btn-voice-library').addEventListener('click', startVoiceSearch);
     document.getElementById('btn-voice-chart').addEventListener('click', startVoiceSearch);
     document.getElementById('btn-new-song').addEventListener('click', function(){ openEditor(null); });
