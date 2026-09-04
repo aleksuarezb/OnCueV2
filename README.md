@@ -116,6 +116,14 @@ Per the project brief, to avoid re-introducing the old app's alignment bugs and 
 - No secondary/developer-mode chart editor — one textarea per version is the only way to enter chart text.
 - No separate lyrics-only view — the chart *is* the display.
 
+## Voice search
+
+Tap 🎤 (Library toolbar, or the chart screen's top bar) and say a song title or a line of its lyrics — it opens that song, exactly as if you'd tapped its card in the Library. It's local navigation like any other browsing here: it never pushes to anyone, and works the same for MD and Viewer.
+
+Matching (`findSongByVoice`) scores every song by title (exact match, then substring either direction, then word-overlap) and by lyric content (the spoken phrase found verbatim in a non-chord, non-header line of any version, requiring at least 4 characters spoken to avoid noise), and opens whichever song scores highest above a confidence floor — or tells you it found no match rather than guessing wrong.
+
+This uses the browser's built-in Web Speech API (`SpeechRecognition`/`webkitSpeechRecognition`), not a bundled speech model — there's nothing to ship or configure, but it also means: it needs an internet connection (dictation is server-side, at least on Safari/iOS), it asks for microphone permission the first time, and it's unsupported (button just explains this) on a browser that doesn't implement the API at all. This project's sandbox has no microphone or real speech backend to test against, so the matching logic was verified directly (mocked transcripts through the real button-click flow) rather than with actual voice input — worth a real on-device check.
+
 ## Acceptance checks
 
 - [x] Paste from a real SongSelect PDF / webpage, save, and copy the text back out — spacing should be pixel/character-identical (verified programmatically: NBSP and tab characters are normalized to plain spaces on save without altering column position).

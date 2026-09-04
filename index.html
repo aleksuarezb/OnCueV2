@@ -133,6 +133,8 @@
   .btn-ghost{ background:transparent; border-color:transparent; color:var(--text-dim); }
   .btn-live{ background:var(--live); border-color:var(--live); color:#fff; }
   .btn-live.is-active{ background:#fff; color:var(--live); }
+  .btn-voice.is-listening{ background:var(--live); border-color:var(--live); color:#fff; animation:voice-pulse 1s ease-in-out infinite; }
+  @keyframes voice-pulse{ 0%,100%{ opacity:1; } 50%{ opacity:0.55; } }
   .btn:disabled{ opacity:0.35; }
 
   body:not(.role-md) .md-only{ display:none !important; }
@@ -210,14 +212,15 @@
 
   /* ---------- library ---------- */
   .az-index{
-    display:flex; flex-wrap:wrap; gap:4px;
-    padding:6px 16px; flex:0 0 auto;
+    display:flex; flex-wrap:wrap; gap:6px;
+    padding:8px 16px; flex:0 0 auto;
   }
   .az-index button{
-    background:none; border:none; color:var(--text-faint);
-    font-size:11px; font-weight:700; padding:3px 5px;
+    background:var(--bg-card); border:1px solid transparent; color:var(--text-faint);
+    font-size:17px; font-weight:800; min-width:38px; min-height:38px;
+    border-radius:8px;
   }
-  .az-index button.has-songs{ color:var(--accent); }
+  .az-index button.has-songs{ color:var(--accent); border-color:var(--border); }
 
   .live-banner{
     margin:0 16px 8px; padding:10px 14px; border-radius:10px;
@@ -503,6 +506,7 @@
           <li><b>Navigate:</b> swipe left/right on the chart, or use the arrows on the right edge — first through a long song's own pages, then on to the next setlist song.</li>
           <li><b>Force a column break:</b> if a verse gets split awkwardly across a column, put a line containing just <code>---</code> right before it in the chart text — it forces a break there and never shows on stage.</li>
           <li><b>Chart modes:</b> tap the ☀︎ icon on the chart screen to switch between dark and light display.</li>
+          <li><b>Voice search:</b> tap 🎤 (Library or chart screen) and say a song title or a line of its lyrics — it opens that song for you. Just for you; it doesn't push to anyone.</li>
           <li><b>Switch identity</b> anytime by tapping the OnCue logo in the header.</li>
         </ol>
       </div>
@@ -522,6 +526,7 @@
     <section id="screen-library" class="screen">
       <div class="toolbar">
         <input id="search-input" type="search" placeholder="Search songs, artists, tags…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+        <button id="btn-voice-library" class="btn btn-ghost btn-voice" title="Say a song title or a lyric">🎤</button>
         <button id="btn-new-song" class="btn btn-accent md-only">+ New Song</button>
       </div>
       <div id="live-banner" class="live-banner hidden"></div>
@@ -591,6 +596,7 @@
         </div>
         <div class="chart-controls">
           <select id="version-select" class="version-select" title="Chart Key — your own view, doesn't affect what anyone else sees"></select>
+          <button id="btn-voice-chart" class="btn btn-ghost btn-voice" title="Say a song title or a lyric">🎤</button>
           <button id="btn-light-toggle" class="btn btn-ghost" title="Toggle chart light mode">☀︎</button>
           <button id="btn-live-toggle" class="btn btn-live md-only hidden">🔴 Go Live</button>
         </div>
@@ -637,7 +643,7 @@
   // Bump this on every deploy, in lockstep with BUILD_ID in sw.js, so the
   // small badge on the landing screen tells you at a glance whether a
   // device has picked up the latest push.
-  const APP_VERSION = "2026-09-03T08-00-00";
+  const APP_VERSION = "2026-09-04T00-00-00";
 
   /* =========================================================
      STORE — a tiny path-based data layer with two backends:
@@ -1267,6 +1273,119 @@
     return Object.keys(state.songs)
       .map(function(id){ return Object.assign({ id: id }, state.songs[id]); })
       .sort(function(a,b){ return (a.title||'').localeCompare(b.title||'', undefined, { sensitivity:'base' }); });
+  }
+
+  /* =========================================================
+     VOICE SEARCH — say a song title or a lyric, jump straight to it.
+     Just another way to open a song (same as tapping its Library card):
+     purely local navigation, doesn't push anything to anyone.
+  ========================================================= */
+  function normalizeSpeech(s){
+    return (s || '').toLowerCase().replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  function wordOverlapScore(needle, haystack){
+    const words = needle.split(' ').filter(Boolean);
+    const haySet = new Set(haystack.split(' ').filter(Boolean));
+    if (!words.length) return 0;
+    let hits = 0;
+    words.forEach(function(w){ if (haySet.has(w)) hits++; });
+    return hits / words.length;
+  }
+
+  // Scores every song against the spoken phrase — by title (exact, then
+  // substring, then word-overlap) and by lyric content (spoken phrase found
+  // verbatim in a non-chord line of any version) — and returns the best
+  // match above a confidence floor, or null if nothing's close enough.
+  function findSongByVoice(spokenRaw){
+    const spoken = normalizeSpeech(spokenRaw);
+    if (!spoken) return null;
+    let best = null;
+    let bestScore = 0;
+
+    songList().forEach(function(song){
+      const title = normalizeSpeech(song.title || '');
+      if (title){
+        let score;
+        if (title === spoken) score = 1;
+        else if (spoken.indexOf(title) !== -1 || title.indexOf(spoken) !== -1) score = 0.9;
+        else score = wordOverlapScore(title, spoken) * 0.8;
+        if (score > bestScore){ bestScore = score; best = song; }
+      }
+
+      if (spoken.length >= 4){
+        orderedVersions(song).forEach(function(v){
+          (v.text || '').split('\n').some(function(line){
+            if (!line.trim() || isSectionHeader(line) || isChordLine(line)) return false;
+            const normLine = normalizeSpeech(line);
+            if (normLine && normLine.indexOf(spoken) !== -1){
+              const score = 0.7 + Math.min(spoken.length / 40, 0.2);
+              if (score > bestScore){ bestScore = score; best = song; }
+              return true;
+            }
+            return false;
+          });
+        });
+      }
+    });
+
+    return bestScore >= 0.45 ? best : null;
+  }
+
+  let voiceListening = false;
+
+  function updateVoiceButtons(){
+    document.querySelectorAll('.btn-voice').forEach(function(btn){
+      btn.classList.toggle('is-listening', voiceListening);
+    });
+  }
+
+  function startVoiceSearch(){
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR){
+      toast("Voice search isn't supported on this browser");
+      return;
+    }
+    if (voiceListening) return;
+
+    const recognition = new SR();
+    recognition.lang = 'en-US';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    voiceListening = true;
+    updateVoiceButtons();
+    toast('Listening…');
+
+    recognition.onresult = function(e){
+      const transcript = e.results[0][0].transcript;
+      const song = findSongByVoice(transcript);
+      if (song){
+        toast('Opening "' + (song.title || 'Untitled') + '"');
+        openChartStandalone(song.id);
+      } else {
+        toast('No match for "' + transcript + '"');
+      }
+    };
+    recognition.onerror = function(e){
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed'){
+        toast('Microphone permission denied');
+      } else if (e.error !== 'no-speech' && e.error !== 'aborted'){
+        toast('Voice search error: ' + e.error);
+      }
+    };
+    recognition.onend = function(){
+      voiceListening = false;
+      updateVoiceButtons();
+    };
+
+    try {
+      recognition.start();
+    } catch (e){
+      voiceListening = false;
+      updateVoiceButtons();
+    }
   }
 
   function renderLibrary(){
@@ -2197,6 +2316,8 @@
     });
 
     document.getElementById('search-input').addEventListener('input', renderLibrary);
+    document.getElementById('btn-voice-library').addEventListener('click', startVoiceSearch);
+    document.getElementById('btn-voice-chart').addEventListener('click', startVoiceSearch);
     document.getElementById('btn-new-song').addEventListener('click', function(){ openEditor(null); });
 
     document.getElementById('btn-editor-close').addEventListener('click', function(){ showScreen('screen-library'); renderLibrary(); });
