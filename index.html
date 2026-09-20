@@ -230,6 +230,12 @@
   }
   .live-banner .dot{ width:9px; height:9px; border-radius:50%; background:var(--live); flex:0 0 auto; }
   .live-banner b{ color:var(--live); }
+  .favorites-filter-banner{
+    margin:0 16px 8px; padding:10px 14px; border-radius:10px;
+    background:rgba(245,179,1,0.12); border:1px solid rgba(245,179,1,0.4);
+    color:var(--text); display:flex; align-items:center; justify-content:space-between; gap:10px;
+  }
+  .favorites-filter-banner button{ color:#f5b301; font-size:12px; font-weight:700; white-space:nowrap; }
 
   .song-grid{
     display:grid;
@@ -548,6 +554,10 @@
         <button id="btn-new-song" class="btn btn-accent md-only">+ New Song</button>
       </div>
       <div id="live-banner" class="live-banner hidden"></div>
+      <div id="favorites-filter-banner" class="favorites-filter-banner hidden">
+        <span id="favorites-filter-label"></span>
+        <button id="btn-clear-favorites-filter" type="button">✕ Show all songs</button>
+      </div>
       <div class="az-index" id="az-index"></div>
       <div id="song-grid" class="song-grid"></div>
     </section>
@@ -698,7 +708,7 @@
   // Bump this on every deploy, in lockstep with BUILD_ID in sw.js, so the
   // small badge on the landing screen tells you at a glance whether a
   // device has picked up the latest push.
-  const APP_VERSION = "2026-09-20T07-00-00";
+  const APP_VERSION = "2026-09-20T08-00-00";
 
   /* =========================================================
      STORE — a tiny path-based data layer with two backends:
@@ -1538,21 +1548,43 @@
   // search box — so only one filter is ever active at a time.
   let libraryLetterFilter = null;
 
+  // Tapping a preset on the Favourites screen sets this to that preset's
+  // id and narrows the library down to its songs — the actual "filter the
+  // library by favourites" behavior, kept separate from editing a list's
+  // membership (which happens in the favourites builder screen instead).
+  // Search and the A-Z index still work on top of it, and it persists
+  // through opening a song and coming back; only clearing it explicitly
+  // (the banner's "Show all songs", or tapping the Library nav button)
+  // returns to the full library.
+  let libraryFavoritesFilterId = null;
+
   function renderLibrary(){
+    if (libraryFavoritesFilterId && !state.favorites[libraryFavoritesFilterId]) libraryFavoritesFilterId = null;
+    const activeFavorites = libraryFavoritesFilterId ? state.favorites[libraryFavoritesFilterId] : null;
+
     const q = (document.getElementById('search-input').value || '').trim().toLowerCase();
     const grid = document.getElementById('song-grid');
     const az = document.getElementById('az-index');
     const all = songList();
-    let filtered = all;
+    const base = activeFavorites ? all.filter(function(s){ return (activeFavorites.songIds || []).indexOf(s.id) !== -1; }) : all;
+    let filtered = base;
     if (q){
-      filtered = all.filter(function(s){
+      filtered = base.filter(function(s){
         const hay = [s.title, s.artist, s.tags].filter(Boolean).join(' ').toLowerCase();
         return hay.indexOf(q) !== -1;
       });
     } else if (libraryLetterFilter){
-      filtered = all.filter(function(s){
+      filtered = base.filter(function(s){
         return (s.title || '#').trim().charAt(0).toUpperCase() === libraryLetterFilter;
       });
+    }
+
+    const filterBanner = document.getElementById('favorites-filter-banner');
+    if (activeFavorites){
+      document.getElementById('favorites-filter-label').textContent = '★ ' + (activeFavorites.name || 'Untitled list');
+      filterBanner.classList.remove('hidden');
+    } else {
+      filterBanner.classList.add('hidden');
     }
 
     grid.innerHTML = '';
@@ -1560,7 +1592,9 @@
       const empty = document.createElement('div');
       empty.className = 'empty-state';
       empty.textContent = !all.length ? 'No songs yet. Add one to get started.' :
-        (libraryLetterFilter ? 'No songs start with "' + libraryLetterFilter + '".' : 'No songs match your search.');
+        (activeFavorites && !base.length) ? 'This list has no songs yet.' :
+        libraryLetterFilter ? 'No songs start with "' + libraryLetterFilter + '".' :
+        q ? 'No songs match your search.' : 'No songs match your search.';
       grid.appendChild(empty);
     } else {
       filtered.forEach(function(song){
@@ -1591,7 +1625,7 @@
     az.innerHTML = '';
     const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
     const present = {};
-    all.forEach(function(s){
+    base.forEach(function(s){
       const l = (s.title || '#').trim().charAt(0).toUpperCase();
       present[l] = true;
     });
@@ -2076,9 +2110,21 @@
       const count = (fl.songIds || []).length;
       row.innerHTML =
         '<span class="name">' + escapeHtml(fl.name || 'Untitled list') + '</span>' +
-        '<span class="count">' + count + ' song' + (count === 1 ? '' : 's') + '</span>';
-      row.addEventListener('click', function(){ openFavoritesBuilder(fl.id); });
+        '<span class="count">' + count + ' song' + (count === 1 ? '' : 's') + '</span>' +
+        '<span class="row-actions md-only"><button data-edit-fav="' + fl.id + '" title="Add/remove songs, rename, delete">✎</button></span>';
+      row.addEventListener('click', function(e){
+        if (e.target.closest('[data-edit-fav]')) return;
+        libraryFavoritesFilterId = fl.id;
+        showScreen('screen-library');
+        renderLibrary();
+      });
       wrap.appendChild(row);
+    });
+    wrap.querySelectorAll('[data-edit-fav]').forEach(function(btn){
+      btn.addEventListener('click', function(e){
+        e.stopPropagation();
+        openFavoritesBuilder(btn.dataset.editFav);
+      });
     });
   }
 
@@ -2607,6 +2653,7 @@
         renderFavoritesBuilder();
         renderFavoritesBuilderPicker();
       }
+      if (document.getElementById('screen-library').classList.contains('active') && libraryFavoritesFilterId) renderLibrary();
     });
   }
 
@@ -2702,7 +2749,8 @@
   ========================================================= */
   function wireUI(){
     document.getElementById('btn-logo').addEventListener('click', function(){ showScreen('screen-landing'); renderLanding(); });
-    document.getElementById('nav-library').addEventListener('click', function(){ showScreen('screen-library'); renderLibrary(); });
+    document.getElementById('nav-library').addEventListener('click', function(){ libraryFavoritesFilterId = null; showScreen('screen-library'); renderLibrary(); });
+    document.getElementById('btn-clear-favorites-filter').addEventListener('click', function(){ libraryFavoritesFilterId = null; renderLibrary(); });
     document.getElementById('nav-favorites').addEventListener('click', function(){ showScreen('screen-favorites'); renderFavoritesScreen(); });
     document.getElementById('nav-setlists').addEventListener('click', function(){ showScreen('screen-setlists'); renderSetlists(); });
     document.getElementById('role-btn').addEventListener('click', toggleRole);
