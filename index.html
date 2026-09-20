@@ -644,7 +644,7 @@
   // Bump this on every deploy, in lockstep with BUILD_ID in sw.js, so the
   // small badge on the landing screen tells you at a glance whether a
   // device has picked up the latest push.
-  const APP_VERSION = "2026-09-04T01-00-00";
+  const APP_VERSION = "2026-09-20T00-00-00";
 
   /* =========================================================
      STORE — a tiny path-based data layer with two backends:
@@ -898,9 +898,17 @@
     return resolveVersionId(song, item ? item.versionId : null);
   }
 
-  const CHORD_TOKEN = /^[\(\[]?[A-G](#|b)?(maj|min|m|dim|aug|sus[24]?|add)?[0-9]*(\/[A-G](#|b)?)?[\)\]]?$/i;
-  const NUMBER_TOKEN = /^[\(\[]?[1-7](#|b)?(maj|min|m|dim|aug|sus[24]?|add)?[0-9]*(\/[1-7])?[\)\]]?$/i;
-  const MISC_TOKEN = /^(N\.?C\.?|x[0-9]+|%|\/{1,4}|-{1,4}|—+|\|+|\.{2,})$/i;
+  // The extension digit(s) can be written bare ("G2") or parenthesized
+  // ("G(2)") — the latter is how added/2 chords are written for Nashville
+  // numbers ("4(2)") to avoid reading as the plain number "42".
+  const CHORD_TOKEN = /^[\(\[]?[A-G](#|b)?(maj|min|m|dim|aug|sus[24]?|add)?(\(?[0-9]+\)?)?(\/[A-G](#|b)?)?[\)\]]?$/i;
+  const NUMBER_TOKEN = /^[\(\[]?[1-7](#|b)?(maj|min|m|dim|aug|sus[24]?|add)?(\(?[0-9]+\)?)?(\/[1-7])?[\)\]]?$/i;
+  // Also treat inline instrumental-break labels (Intro:, Instrumental,
+  // Ending, etc — the same words BARE_HEADER recognizes as standalone
+  // headers) as chord-line tokens, so a line like "Intro: G D Em C" that
+  // mixes a label with real chords still renders the whole line as chords
+  // instead of falling back to plain lyric text.
+  const MISC_TOKEN = /^(N\.?C\.?|x[0-9]+|%|\/{1,4}|-{1,4}|—+|\|+|\.{2,}|(intro|verse|chorus|pre-?chorus|bridge|outro|tag|interlude|turnaround|instrumental|refrain|ending|vamp|breakdown|hook)s?:?\.?[0-9ivx]*\.?)$/i;
 
   function isChordLine(line){
     const trimmed = line.trim();
