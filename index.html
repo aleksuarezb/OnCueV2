@@ -668,7 +668,7 @@
   // Bump this on every deploy, in lockstep with BUILD_ID in sw.js, so the
   // small badge on the landing screen tells you at a glance whether a
   // device has picked up the latest push.
-  const APP_VERSION = "2026-09-20T03-00-00";
+  const APP_VERSION = "2026-09-20T04-00-00";
 
   /* =========================================================
      STORE — a tiny path-based data layer with two backends:
@@ -1780,8 +1780,7 @@
     song.updatedAt = Date.now();
     Store.set('songs/' + state.editingSongId, song);
     toast('Saved');
-    showScreen('screen-library');
-    renderLibrary();
+    document.getElementById('btn-delete-song').classList.remove('hidden');
   }
 
   function deleteSong(){
