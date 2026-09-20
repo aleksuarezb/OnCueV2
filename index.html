@@ -668,7 +668,7 @@
   // Bump this on every deploy, in lockstep with BUILD_ID in sw.js, so the
   // small badge on the landing screen tells you at a glance whether a
   // device has picked up the latest push.
-  const APP_VERSION = "2026-09-20T02-00-00";
+  const APP_VERSION = "2026-09-20T03-00-00";
 
   /* =========================================================
      STORE — a tiny path-based data layer with two backends:
@@ -941,6 +941,64 @@
     return tokens.every(function(t){
       return CHORD_TOKEN.test(t) || NUMBER_TOKEN.test(t) || MISC_TOKEN.test(t);
     });
+  }
+
+  // "Generate Key from Numbers" — a literal, per-token find/replace of
+  // Nashville-number roots for a chosen key, deliberately NOT a real
+  // transposer. It never re-flows, re-wraps, or re-spaces a line; it swaps
+  // only the root-degree characters of a recognized number token (e.g. the
+  // "3" in "3sus4" or the "1" and "3" in "1/3") for that key's note name,
+  // and leaves every other character — quality suffixes, extensions,
+  // slash targets' own formatting, and all surrounding whitespace — byte
+  // for byte untouched. A key with sharped/flatted diatonic degrees will
+  // produce a longer token ("G#" vs "3"), which nudges whatever follows on
+  // that line to the right; there's no attempt to compensate for that by
+  // padding, since doing so would be exactly the kind of "adjust the
+  // spacing for you" behavior this feature is explicitly avoiding. This is
+  // a one-time draft generator, not a live/synced transform — the result
+  // lands in an editable version textarea for the MD to review and tweak
+  // before saving, same as a hand-typed version.
+  const KEY_SCALE_NOTES = {
+    'C':  ['C','D','E','F','G','A','B'],
+    'Db': ['Db','Eb','F','Gb','Ab','Bb','C'],
+    'D':  ['D','E','F#','G','A','B','C#'],
+    'Eb': ['Eb','F','G','Ab','Bb','C','D'],
+    'E':  ['E','F#','G#','A','B','C#','D#'],
+    'F':  ['F','G','A','Bb','C','D','E'],
+    'F#': ['F#','G#','A#','B','C#','D#','E#'],
+    'G':  ['G','A','B','C','D','E','F#'],
+    'Ab': ['Ab','Bb','C','Db','Eb','F','G'],
+    'A':  ['A','B','C#','D','E','F#','G#'],
+    'Bb': ['Bb','C','D','Eb','F','G','A'],
+    'B':  ['B','C#','D#','E','F#','G#','A#']
+  };
+  const CONVERT_KEYS = ['C','Db','D','Eb','E','F','F#','G','Ab','A','Bb','B'];
+
+  // Captures a number token's pieces so only the bare group-2/group-6
+  // degree digits get swapped: (1) leading "(" or "[", (2) the root
+  // degree digit, (3) the root's own literal #/b (kept as-is, not
+  // recomputed), (4) quality+extension blob kept verbatim, (5)/(6) an
+  // optional "/degree" slash target and its own literal #/b, (7) trailing
+  // ")" or "]".
+  const NUMBER_TOKEN_PARTS = /^([\(\[]?)([1-7])(#|b)?((?:maj|min|m|dim|aug|sus[24]?|add)?(?:\(?[0-9]+\)?)?)(?:\/([1-7])(#|b)?)?([\)\]]?)$/i;
+
+  function convertNumberTokenToKey(token, scale){
+    const m = NUMBER_TOKEN_PARTS.exec(token);
+    if (!m) return token;
+    let out = m[1] + scale[Number(m[2]) - 1] + (m[3] || '') + m[4];
+    if (m[5]) out += '/' + scale[Number(m[5]) - 1] + (m[6] || '');
+    return out + m[7];
+  }
+
+  function convertNumberChartToKey(text, key){
+    const scale = KEY_SCALE_NOTES[key];
+    if (!scale) return text;
+    return (text || '').split('\n').map(function(line){
+      if (isForceBreak(line) || isSectionHeader(line) || !isChordLine(line)) return line;
+      return line.split(/(\s+)/).map(function(tok){
+        return tok.trim() ? convertNumberTokenToKey(tok, scale) : tok;
+      }).join('');
+    }).join('\n');
   }
 
   // Recognizes both `[Verse 1]`-style bracketed headers and common bare
@@ -1610,6 +1668,13 @@
     addBtn.addEventListener('click', addVersion);
     wrap.appendChild(addBtn);
 
+    const genBtn = document.createElement('button');
+    genBtn.className = 'version-tab-add';
+    genBtn.textContent = '♫ Generate Key from Numbers';
+    genBtn.title = 'Find/replace Nashville numbers with a key’s note names — no other changes';
+    genBtn.addEventListener('click', generateKeyFromNumbers);
+    wrap.appendChild(genBtn);
+
     wrap.querySelectorAll('[data-remove]').forEach(function(el){
       el.addEventListener('click', function(e){
         e.stopPropagation();
@@ -1645,6 +1710,39 @@
     song.versions[id] = { label: label.trim(), text: '', order: versions.length };
     state.editingVersionId = id;
     renderVersionTabs();
+  }
+
+  function generateKeyFromNumbers(){
+    commitCurrentTextarea();
+    const song = state.editingSongDraft;
+    const versions = orderedVersions(song);
+    const numbers = versions.find(function(v){ return (v.label || '').trim().toLowerCase() === 'numbers'; });
+    if (!numbers || !(numbers.text || '').trim()){
+      toast('Add a Numbers version with chords first');
+      return;
+    }
+
+    const input = window.prompt('Generate which key? (' + CONVERT_KEYS.join(', ') + ')');
+    if (!input) return;
+    const key = CONVERT_KEYS.find(function(k){ return k.toLowerCase() === input.trim().toLowerCase(); });
+    if (!key){
+      toast('Not a recognized key: ' + input.trim());
+      return;
+    }
+
+    const text = convertNumberChartToKey(numbers.text, key);
+    const existing = versions.find(function(v){ return (v.label || '').trim().toLowerCase() === key.toLowerCase(); });
+    if (existing){
+      if (!window.confirm('A "' + key + '" version already exists. Replace its text with the generated chart?')) return;
+      existing.text = text;
+      state.editingVersionId = existing.id;
+    } else {
+      const id = genId();
+      song.versions[id] = { label: key, text: text, order: versions.length };
+      state.editingVersionId = id;
+    }
+    renderVersionTabs();
+    toast('Generated ' + key + ' from Numbers — review before saving');
   }
 
   function renameVersion(vId){
