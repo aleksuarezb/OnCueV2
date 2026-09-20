@@ -251,12 +251,6 @@
     background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-dim);
     border-radius:7px; width:28px; height:28px; font-size:13px;
   }
-  .song-card .fav-star{
-    position:absolute; top:8px; right:42px;
-    background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-dim);
-    border-radius:7px; width:28px; height:28px; font-size:15px; line-height:1;
-  }
-  .song-card .fav-star.is-fav{ color:#f5b301; border-color:#f5b301; background:rgba(245,179,1,0.14); }
   .empty-state{ padding:40px 20px; text-align:center; color:var(--text-faint); }
 
   /* ---------- editor ---------- */
@@ -612,6 +606,35 @@
       </div>
     </section>
 
+    <section id="screen-favorites" class="screen">
+      <div class="toolbar">
+        <h2>Favourites</h2>
+        <button id="btn-new-favorites" class="btn btn-accent md-only">+ New List</button>
+      </div>
+      <div id="favorites-list" class="setlist-list"></div>
+    </section>
+
+    <section id="screen-favorites-builder" class="screen">
+      <div class="editor-topbar">
+        <button id="btn-favorites-builder-close" class="btn btn-ghost">← Back</button>
+        <div class="editor-actions md-only">
+          <button id="btn-delete-favorites" class="btn btn-danger">Delete</button>
+        </div>
+      </div>
+      <input id="favorites-name-input" class="text-input" placeholder="List name (e.g. Liam's Favourites)" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+      <div class="builder-body">
+        <div class="builder-col">
+          <h3>In this list</h3>
+          <div id="favorites-songs" class="setlist-songs"></div>
+        </div>
+        <div class="builder-col md-only">
+          <h3>Add from library</h3>
+          <input id="favorites-builder-search" class="text-input" placeholder="Search…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+          <div id="favorites-builder-picker" class="song-picker"></div>
+        </div>
+      </div>
+    </section>
+
     <section id="screen-chart" class="screen">
       <div class="chart-topbar">
         <button id="btn-chart-close" class="btn btn-ghost">← Back</button>
@@ -675,7 +698,7 @@
   // Bump this on every deploy, in lockstep with BUILD_ID in sw.js, so the
   // small badge on the landing screen tells you at a glance whether a
   // device has picked up the latest push.
-  const APP_VERSION = "2026-09-20T06-00-00";
+  const APP_VERSION = "2026-09-20T07-00-00";
 
   /* =========================================================
      STORE — a tiny path-based data layer with two backends:
@@ -1269,11 +1292,13 @@
     role: 'viewer',
     songs: {},
     setlists: {},
+    favorites: {},
     live: null,
     editingSongId: null,
     editingVersionId: null,
     editingSongDraft: null,
     editingSetlistId: null,
+    editingFavoritesId: null,
     chart: {
       songId: null,
       versionId: null,
@@ -1333,8 +1358,8 @@
     document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('active'); });
     document.getElementById(id).classList.add('active');
     document.getElementById('app-header').classList.toggle('hidden', id === 'screen-landing');
-    document.getElementById('nav-library').classList.toggle('active', id === 'screen-library' && !libraryFavoritesOnly);
-    document.getElementById('nav-favorites').classList.toggle('active', id === 'screen-library' && libraryFavoritesOnly);
+    document.getElementById('nav-library').classList.toggle('active', id === 'screen-library');
+    document.getElementById('nav-favorites').classList.toggle('active', id === 'screen-favorites' || id === 'screen-favorites-builder');
     document.getElementById('nav-setlists').classList.toggle('active', id === 'screen-setlists' || id === 'screen-setlist-builder');
   }
 
@@ -1513,28 +1538,19 @@
   // search box — so only one filter is ever active at a time.
   let libraryLetterFilter = null;
 
-  // Favourites — a shared, MD-curated shortlist (song.favorite), separate
-  // from a Setlist: no order, no per-song key, no Go Live. Tapping the
-  // Favourites nav button just narrows the library down to that shortlist;
-  // search and the A-Z index still work on top of it, same as browsing the
-  // full library. Persists across navigating into a song and back so
-  // drilling into a favourite doesn't lose the filtered view.
-  let libraryFavoritesOnly = false;
-
   function renderLibrary(){
     const q = (document.getElementById('search-input').value || '').trim().toLowerCase();
     const grid = document.getElementById('song-grid');
     const az = document.getElementById('az-index');
     const all = songList();
-    const base = libraryFavoritesOnly ? all.filter(function(s){ return !!s.favorite; }) : all;
-    let filtered = base;
+    let filtered = all;
     if (q){
-      filtered = base.filter(function(s){
+      filtered = all.filter(function(s){
         const hay = [s.title, s.artist, s.tags].filter(Boolean).join(' ').toLowerCase();
         return hay.indexOf(q) !== -1;
       });
     } else if (libraryLetterFilter){
-      filtered = base.filter(function(s){
+      filtered = all.filter(function(s){
         return (s.title || '#').trim().charAt(0).toUpperCase() === libraryLetterFilter;
       });
     }
@@ -1544,9 +1560,7 @@
       const empty = document.createElement('div');
       empty.className = 'empty-state';
       empty.textContent = !all.length ? 'No songs yet. Add one to get started.' :
-        (libraryFavoritesOnly && !base.length) ? 'No favourites yet. Tap the star on a song to add it.' :
-        libraryLetterFilter ? 'No songs start with "' + libraryLetterFilter + '".' :
-        q ? 'No songs match your search.' : 'No favourites match your search.';
+        (libraryLetterFilter ? 'No songs start with "' + libraryLetterFilter + '".' : 'No songs match your search.');
       grid.appendChild(empty);
     } else {
       filtered.forEach(function(song){
@@ -1558,10 +1572,9 @@
           '<div class="title">' + escapeHtml(song.title || 'Untitled') + '</div>' +
           '<div class="artist">' + escapeHtml(song.artist || '') + '</div>' +
           (tags.length ? '<div class="tags">' + tags.map(function(t){ return '<span class="tag">' + escapeHtml(t) + '</span>'; }).join('') + '</div>' : '') +
-          '<button class="fav-star md-only' + (song.favorite ? ' is-fav' : '') + '" data-fav="' + song.id + '" title="' + (song.favorite ? 'Remove from Favourites' : 'Add to Favourites') + '">' + (song.favorite ? '★' : '☆') + '</button>' +
           '<button class="edit-fab md-only" data-edit="' + song.id + '" title="Edit">✎</button>';
         card.addEventListener('click', function(e){
-          if (e.target.closest('[data-edit]') || e.target.closest('[data-fav]')) return;
+          if (e.target.closest('[data-edit]')) return;
           openChartStandalone(song.id);
         });
         grid.appendChild(card);
@@ -1572,20 +1585,13 @@
           openEditor(btn.dataset.edit);
         });
       });
-      grid.querySelectorAll('[data-fav]').forEach(function(btn){
-        btn.addEventListener('click', function(e){
-          e.stopPropagation();
-          const song = state.songs[btn.dataset.fav];
-          Store.set('songs/' + btn.dataset.fav + '/favorite', !(song && song.favorite));
-        });
-      });
     }
 
     // A-Z index
     az.innerHTML = '';
     const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
     const present = {};
-    base.forEach(function(s){
+    all.forEach(function(s){
       const l = (s.title || '#').trim().charAt(0).toUpperCase();
       present[l] = true;
     });
@@ -2020,6 +2026,182 @@
     renderSetlists();
   }
 
+  /* =========================================================
+     FAVOURITES — named, MD-curated shortlists (e.g. "Liam's
+     Favourites", "Kids Ministry Favourites"). Unlike a Setlist: no
+     order, no per-song key override, no Go Live — just a flat set of
+     songs, added/removed the same way a Setlist's songs are (search
+     the library from inside the list), so any number of independent
+     shortlists can exist side by side and the library stays a single
+     flat A-Z browse.
+  ========================================================= */
+  function favoritesListAll(){
+    return Object.keys(state.favorites)
+      .map(function(id){ return Object.assign({ id: id }, state.favorites[id]); })
+      .sort(function(a,b){ return (a.name||'').localeCompare(b.name||'', undefined, { sensitivity:'base' }); });
+  }
+
+  // One-time cleanup for the earlier version of this feature (a single
+  // shared song.favorite boolean, no naming, no multiple lists). If any
+  // song still carries that flag and no named list exists yet, roll it
+  // into a starter "Favourites" list instead of silently losing it, then
+  // clear the old flags so this can't fire again.
+  let favoritesMigrationChecked = false;
+  function migrateLegacyFavoritesIfNeeded(){
+    if (favoritesMigrationChecked) return;
+    favoritesMigrationChecked = true;
+    if (Object.keys(state.favorites).length) return;
+    const legacy = songList().filter(function(s){ return !!s.favorite; });
+    if (!legacy.length) return;
+    const id = genId();
+    Store.set('favorites/' + id, { name: 'Favourites', songIds: legacy.map(function(s){ return s.id; }), createdAt: Date.now() });
+    legacy.forEach(function(s){ Store.set('songs/' + s.id + '/favorite', null); });
+  }
+
+  function renderFavoritesScreen(){
+    migrateLegacyFavoritesIfNeeded();
+    const wrap = document.getElementById('favorites-list');
+    wrap.innerHTML = '';
+    const list = favoritesListAll();
+    if (!list.length){
+      const empty = document.createElement('div');
+      empty.className = 'empty-state';
+      empty.textContent = 'No favourites lists yet.';
+      wrap.appendChild(empty);
+      return;
+    }
+    list.forEach(function(fl){
+      const row = document.createElement('button');
+      row.className = 'setlist-row';
+      const count = (fl.songIds || []).length;
+      row.innerHTML =
+        '<span class="name">' + escapeHtml(fl.name || 'Untitled list') + '</span>' +
+        '<span class="count">' + count + ' song' + (count === 1 ? '' : 's') + '</span>';
+      row.addEventListener('click', function(){ openFavoritesBuilder(fl.id); });
+      wrap.appendChild(row);
+    });
+  }
+
+  function newFavoritesList(){
+    const name = window.prompt('List name (e.g. "Liam\'s Favourites" or "Kids Ministry Favourites"):');
+    if (!name) return;
+    const id = genId();
+    Store.set('favorites/' + id, { name: name.trim(), songIds: [], createdAt: Date.now() });
+    openFavoritesBuilder(id);
+  }
+
+  function openFavoritesBuilder(id){
+    state.editingFavoritesId = id;
+    const fl = state.favorites[id];
+    document.getElementById('favorites-name-input').value = fl ? (fl.name || '') : '';
+    renderFavoritesBuilder();
+    document.getElementById('favorites-builder-search').value = '';
+    renderFavoritesBuilderPicker();
+    showScreen('screen-favorites-builder');
+  }
+
+  function currentFavoritesList(){
+    return state.favorites[state.editingFavoritesId];
+  }
+
+  function saveCurrentFavoritesList(fl){
+    Store.set('favorites/' + state.editingFavoritesId, fl);
+  }
+
+  function renderFavoritesBuilder(){
+    const fl = currentFavoritesList();
+    const wrap = document.getElementById('favorites-songs');
+    wrap.innerHTML = '';
+    const songIds = (fl && fl.songIds) || [];
+    if (!fl || !songIds.length){
+      const empty = document.createElement('div');
+      empty.className = 'empty-state';
+      empty.textContent = 'No songs in this list yet.';
+      wrap.appendChild(empty);
+      return;
+    }
+    songIds.forEach(function(songId, i){
+      const song = state.songs[songId];
+      const row = document.createElement('div');
+      row.className = 'setlist-song-row';
+      row.innerHTML =
+        '<span class="info"><div class="t">' + escapeHtml(song ? song.title || 'Untitled' : '(missing song)') + '</div>' +
+        '<div class="a">' + escapeHtml(song ? song.artist || '' : '') + '</div></span>' +
+        '<span class="row-actions md-only">' +
+          '<button data-remove="' + i + '">✕</button>' +
+        '</span>';
+      row.addEventListener('click', function(e){
+        if (e.target.closest('button')) return;
+        if (song) openChartStandalone(songId);
+      });
+      wrap.appendChild(row);
+    });
+    wrap.querySelectorAll('[data-remove]').forEach(function(b){
+      b.addEventListener('click', function(e){
+        e.stopPropagation();
+        removeSongFromFavorites(parseInt(b.dataset.remove, 10));
+      });
+    });
+  }
+
+  function removeSongFromFavorites(i){
+    const fl = currentFavoritesList();
+    if (!fl) return;
+    const songIds = (fl.songIds || []).slice();
+    songIds.splice(i, 1);
+    fl.songIds = songIds;
+    saveCurrentFavoritesList(fl);
+  }
+
+  function addSongToFavorites(songId){
+    const fl = currentFavoritesList();
+    if (!fl) return;
+    const songIds = (fl.songIds || []).slice();
+    if (songIds.indexOf(songId) !== -1) return;
+    songIds.push(songId);
+    fl.songIds = songIds;
+    saveCurrentFavoritesList(fl);
+  }
+
+  // Excludes songs already in this list (unlike the Setlist picker, which
+  // allows adding the same song twice for a reprise) — a shortlist has no
+  // use for a duplicate entry of the same song.
+  function renderFavoritesBuilderPicker(){
+    const q = (document.getElementById('favorites-builder-search').value || '').trim().toLowerCase();
+    const wrap = document.getElementById('favorites-builder-picker');
+    wrap.innerHTML = '';
+    const fl = currentFavoritesList();
+    const songIds = (fl && fl.songIds) || [];
+    const all = songList().filter(function(s){
+      if (songIds.indexOf(s.id) !== -1) return false;
+      if (!q) return true;
+      const hay = [s.title, s.artist, s.tags].filter(Boolean).join(' ').toLowerCase();
+      return hay.indexOf(q) !== -1;
+    });
+    all.forEach(function(song){
+      const row = document.createElement('button');
+      row.className = 'pick-row';
+      row.innerHTML = '<span class="info"><div class="t">' + escapeHtml(song.title || 'Untitled') +
+        '</div><div class="a">' + escapeHtml(song.artist || '') + '</div></span><span>+</span>';
+      row.addEventListener('click', function(){ addSongToFavorites(song.id); });
+      wrap.appendChild(row);
+    });
+  }
+
+  function renameFavoritesList(){
+    const fl = currentFavoritesList();
+    if (!fl) return;
+    fl.name = document.getElementById('favorites-name-input').value.trim() || fl.name;
+    saveCurrentFavoritesList(fl);
+  }
+
+  function deleteFavoritesList(){
+    if (!window.confirm('Delete this favourites list? Songs are not affected.')) return;
+    Store.remove('favorites/' + state.editingFavoritesId);
+    showScreen('screen-favorites');
+    renderFavoritesScreen();
+  }
+
   function goLiveToggle(){
     const sl = currentSetlist();
     if (!sl) return;
@@ -2409,7 +2591,22 @@
         renderSetlistBuilder();
         renderBuilderPicker();
       }
+      if (document.getElementById('screen-favorites-builder').classList.contains('active')){
+        renderFavoritesBuilder();
+        renderFavoritesBuilderPicker();
+      }
       if (document.getElementById('screen-chart').classList.contains('active')) renderChartScreen();
+    });
+  }
+
+  function wireFavoritesWatcher(){
+    Store.watch('favorites', function(favorites){
+      state.favorites = favorites || {};
+      if (document.getElementById('screen-favorites').classList.contains('active')) renderFavoritesScreen();
+      if (document.getElementById('screen-favorites-builder').classList.contains('active')){
+        renderFavoritesBuilder();
+        renderFavoritesBuilderPicker();
+      }
     });
   }
 
@@ -2505,8 +2702,8 @@
   ========================================================= */
   function wireUI(){
     document.getElementById('btn-logo').addEventListener('click', function(){ showScreen('screen-landing'); renderLanding(); });
-    document.getElementById('nav-library').addEventListener('click', function(){ libraryFavoritesOnly = false; showScreen('screen-library'); renderLibrary(); });
-    document.getElementById('nav-favorites').addEventListener('click', function(){ libraryFavoritesOnly = true; showScreen('screen-library'); renderLibrary(); });
+    document.getElementById('nav-library').addEventListener('click', function(){ showScreen('screen-library'); renderLibrary(); });
+    document.getElementById('nav-favorites').addEventListener('click', function(){ showScreen('screen-favorites'); renderFavoritesScreen(); });
     document.getElementById('nav-setlists').addEventListener('click', function(){ showScreen('screen-setlists'); renderSetlists(); });
     document.getElementById('role-btn').addEventListener('click', toggleRole);
 
@@ -2579,6 +2776,12 @@
     document.getElementById('btn-go-live').addEventListener('click', goLiveToggle);
     document.getElementById('builder-search').addEventListener('input', renderBuilderPicker);
 
+    document.getElementById('btn-new-favorites').addEventListener('click', newFavoritesList);
+    document.getElementById('btn-favorites-builder-close').addEventListener('click', function(){ showScreen('screen-favorites'); renderFavoritesScreen(); });
+    document.getElementById('favorites-name-input').addEventListener('blur', renameFavoritesList);
+    document.getElementById('btn-delete-favorites').addEventListener('click', deleteFavoritesList);
+    document.getElementById('favorites-builder-search').addEventListener('input', renderFavoritesBuilderPicker);
+
     document.getElementById('btn-chart-close').addEventListener('click', function(){
       if (state.chart.setlistId) { showScreen('screen-setlist-builder'); openSetlistBuilder(state.chart.setlistId); }
       else { showScreen('screen-library'); renderLibrary(); }
@@ -2634,6 +2837,7 @@
     wireUI();
     wireSongsWatcher();
     wireSetlistsWatcher();
+    wireFavoritesWatcher();
     wireLiveWatcher();
     wireConnectionWatcher();
     wireChartReflow();
