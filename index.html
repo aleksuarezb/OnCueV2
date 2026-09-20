@@ -260,6 +260,10 @@
   }
   .editor-actions{ margin-left:auto; display:flex; gap:8px; }
   .editor-fields{ display:flex; flex-direction:column; gap:8px; padding:14px 16px; flex:0 0 auto; }
+  .font-size-row{ display:flex; align-items:center; gap:10px; padding:4px 2px; }
+  .font-size-label{ font-size:13px; color:var(--text-dim); flex:1; }
+  .font-size-btn{ width:38px; height:34px; font-size:14px; font-weight:700; padding:0; }
+  .font-size-value{ font-size:13px; font-weight:600; color:var(--text); min-width:42px; text-align:center; }
   .version-tabs{ display:flex; gap:6px; padding:0 16px 10px; flex-wrap:wrap; flex:0 0 auto; }
   .version-tab{
     background:var(--bg-card); border:1px solid var(--border); color:var(--text-dim);
@@ -334,6 +338,7 @@
     --chart-section: #d8b559;
     --chart-border: var(--border);
     --chart-panel: var(--bg-elevated);
+    --chart-font-size: 13px;
   }
   #screen-chart.chart-light{
     --chart-bg:#fbf7ec;
@@ -398,7 +403,7 @@
     display:grid; grid-auto-flow:column; grid-auto-columns:1ch;
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Roboto Mono", "Liberation Mono", "Courier New", monospace;
     font-variant-ligatures:none; font-kerning:none;
-    font-size:13px; line-height:1.4; white-space:pre;
+    font-size:var(--chart-font-size, 13px); line-height:1.4; white-space:pre;
   }
   .chart-line .ch{ min-width:0; overflow:hidden; white-space:pre; }
   .chart-line.chord-line{ color:var(--chart-chord); font-weight:700; }
@@ -548,6 +553,12 @@
         <input id="edit-artist" class="text-input" placeholder="Artist" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
         <input id="edit-tags" class="text-input" placeholder="Tags (comma separated)" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
         <input id="edit-info" class="text-input" placeholder="Key / Tempo / Time (optional) — e.g. Key - C | Tempo - 64 | Time - 4/4" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+        <div class="font-size-row">
+          <span class="font-size-label">Chart Font Size</span>
+          <button id="font-size-dec" class="btn btn-ghost font-size-btn" type="button" title="Smaller">A−</button>
+          <span id="font-size-value" class="font-size-value">100%</span>
+          <button id="font-size-inc" class="btn btn-ghost font-size-btn" type="button" title="Larger">A+</button>
+        </div>
       </div>
       <div class="version-tabs" id="version-tabs"></div>
       <textarea id="edit-textarea" class="chart-textarea" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Type or paste the chart exactly as it should appear on stage…"></textarea>
@@ -644,7 +655,7 @@
   // Bump this on every deploy, in lockstep with BUILD_ID in sw.js, so the
   // small badge on the landing screen tells you at a glance whether a
   // device has picked up the latest push.
-  const APP_VERSION = "2026-09-20T00-00-00";
+  const APP_VERSION = "2026-09-20T01-00-00";
 
   /* =========================================================
      STORE — a tiny path-based data layer with two backends:
@@ -1011,6 +1022,25 @@
       'metrics: ' + JSON.stringify(metrics) + '\n' +
       'line count: ' + items.length + ' (incl. ' + items.filter(function(it){ return it.forceBreak; }).length + ' forced breaks)\n' +
       'pages: ' + pages.length + ' | cols/page: ' + (pages[0] ? pages[0].length : 0) + ' | lines/col: ' + (pages[0] ? pages[0].map(function(c){ return c.length; }) : []);
+  }
+
+  // Per-song chart font size. Stored on the song itself (song.fontScale, a
+  // multiplier on the base 13px) so it's set once by the MD in the editor
+  // and applies for everyone, on every key/version of that song — unlike
+  // Chart Key, this is never a personal per-device setting.
+  const FONT_SCALE_DEFAULT = 1;
+  const FONT_SCALE_MIN = 0.7;
+  const FONT_SCALE_MAX = 1.6;
+  const FONT_SCALE_STEP = 0.1;
+  const FONT_SCALE_BASE_PX = 13;
+
+  function songFontScale(song){
+    const v = song && song.fontScale;
+    return (typeof v === 'number' && v > 0) ? v : FONT_SCALE_DEFAULT;
+  }
+
+  function applyChartFontScale(song){
+    document.getElementById('screen-chart').style.setProperty('--chart-font-size', (FONT_SCALE_BASE_PX * songFontScale(song)) + 'px');
   }
 
   function getChartRenderMetrics(){
@@ -1523,7 +1553,24 @@
     document.getElementById('edit-info').value = song.info || '';
     document.getElementById('btn-delete-song').classList.toggle('hidden', !state.songs[songId]);
     renderVersionTabs();
+    renderFontSizeControl();
     showScreen('screen-editor');
+  }
+
+  function renderFontSizeControl(){
+    const song = state.editingSongDraft;
+    const scale = songFontScale(song);
+    document.getElementById('font-size-value').textContent = Math.round(scale * 100) + '%';
+    document.getElementById('font-size-dec').disabled = scale <= FONT_SCALE_MIN + 1e-9;
+    document.getElementById('font-size-inc').disabled = scale >= FONT_SCALE_MAX - 1e-9;
+  }
+
+  function adjustFontSize(delta){
+    const song = state.editingSongDraft;
+    if (!song) return;
+    const next = Math.min(FONT_SCALE_MAX, Math.max(FONT_SCALE_MIN, Math.round((songFontScale(song) + delta) * 100) / 100));
+    song.fontScale = next;
+    renderFontSizeControl();
   }
 
   function renderVersionTabs(){
@@ -2020,6 +2067,7 @@
     });
 
     const version = song && song.versions ? song.versions[state.chart.versionId] : null;
+    applyChartFontScale(song);
     renderChart(document.getElementById('chart-render'), version ? version.text : '');
 
     renderChartControls();
@@ -2346,6 +2394,8 @@
     document.getElementById('btn-editor-close').addEventListener('click', function(){ showScreen('screen-library'); renderLibrary(); });
     document.getElementById('btn-save-song').addEventListener('click', saveSong);
     document.getElementById('btn-delete-song').addEventListener('click', deleteSong);
+    document.getElementById('font-size-dec').addEventListener('click', function(){ adjustFontSize(-FONT_SCALE_STEP); });
+    document.getElementById('font-size-inc').addEventListener('click', function(){ adjustFontSize(FONT_SCALE_STEP); });
     document.getElementById('edit-textarea').addEventListener('blur', function(e){
       e.target.value = normalizeWhitespace(e.target.value);
     });
