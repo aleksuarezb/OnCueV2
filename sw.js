@@ -4,7 +4,7 @@
 // a new value here creates a brand new cache, forces waiting service workers
 // to activate immediately, and wipes every older cache so no device can get
 // stuck showing a stale build.
-const BUILD_ID = '2026-09-20T04-00-00';
+const BUILD_ID = '2026-09-20T05-00-00';
 const CACHE_NAME = 'oncue-cache-' + BUILD_ID;
 
 const APP_SHELL = [
@@ -37,11 +37,21 @@ self.addEventListener('activate', (event) => {
 // Network-first: always try to fetch a fresh copy so a new deploy is visible
 // the moment a device is online, even before the new SW has fully taken over.
 // Fall back to the cache so the app still works offline on stage.
+//
+// { cache: 'no-store' } here is load-bearing, not decoration: without it,
+// fetch() is still allowed to answer straight from the browser's own HTTP
+// disk cache (governed by GitHub Pages' Cache-Control header, not by
+// anything in this file) instead of hitting the network — so a deploy could
+// silently fail to show up on a device for that cache's lifetime even
+// though BUILD_ID was bumped, since BUILD_ID only busts OUR Cache Storage
+// bucket below, not the browser's separate HTTP cache. no-store forces an
+// actual network round-trip every time, which is the only way "network
+// first" can mean what it says.
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
   event.respondWith(
-    fetch(event.request)
+    fetch(event.request, { cache: 'no-store' })
       .then((response) => {
         const copy = response.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
