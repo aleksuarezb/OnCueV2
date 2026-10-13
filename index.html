@@ -708,7 +708,7 @@
   // Bump this on every deploy, in lockstep with BUILD_ID in sw.js, so the
   // small badge on the landing screen tells you at a glance whether a
   // device has picked up the latest push.
-  const APP_VERSION = "2026-09-20T08-00-00";
+  const APP_VERSION = "2026-10-13T00-00-00";
 
   /* =========================================================
      STORE — a tiny path-based data layer with two backends:
@@ -971,8 +971,10 @@
   // Ending, etc — the same words BARE_HEADER recognizes as standalone
   // headers) as chord-line tokens, so a line like "Intro: G D Em C" that
   // mixes a label with real chords still renders the whole line as chords
-  // instead of falling back to plain lyric text.
-  const MISC_TOKEN = /^(N\.?C\.?|x[0-9]+|%|\/{1,4}|-{1,4}|—+|\|+|\.{2,}|(intro|verse|chorus|pre-?chorus|bridge|outro|tag|interlude|turnaround|instrumental|refrain|ending|vamp|breakdown|hook)s?:?\.?[0-9ivx]*\.?)$/i;
+  // instead of falling back to plain lyric text. The trailing [a-z]? lets
+  // a variant suffix ("Chorus 1A", "Bridge 1B") through too, matching
+  // BARE_HEADER below.
+  const MISC_TOKEN = /^(N\.?C\.?|x[0-9]+|%|\/{1,4}|-{1,4}|—+|\|+|\.{2,}|(intro|verse|chorus|pre-?chorus|bridge|outro|tag|interlude|turnaround|instrumental|refrain|ending|vamp|breakdown|hook)s?:?\.?[0-9ivx]*[a-z]?\.?)$/i;
 
   function isChordLine(line){
     const trimmed = line.trim();
@@ -1043,9 +1045,11 @@
 
   // Recognizes both `[Verse 1]`-style bracketed headers and common bare
   // headers written without brackets (INTRO, VERSE 1, PRE-CHORUS, etc — a
-  // very common convention in real-world charts). This only affects bold
-  // header styling; it never changes what's stored or how spacing renders.
-  const BARE_HEADER = /^(intro|verse|chorus|pre-?chorus|bridge|outro|tag|interlude|turnaround|instrumental|refrain|ending|vamp|breakdown|hook)\.?\s*[0-9ivx]*\.?$/i;
+  // very common convention in real-world charts), including a lettered
+  // variant suffix on the number (CHORUS 1A, BRIDGE 1B, TAG 1C). This only
+  // affects bold header styling; it never changes what's stored or how
+  // spacing renders.
+  const BARE_HEADER = /^(intro|verse|chorus|pre-?chorus|bridge|outro|tag|interlude|turnaround|instrumental|refrain|ending|vamp|breakdown|hook)\.?\s*[0-9ivx]*[a-z]?\.?$/i;
 
   function isSectionHeader(line){
     const trimmed = line.trim();
@@ -1142,7 +1146,7 @@
   const FONT_SCALE_DEFAULT = 1;
   const FONT_SCALE_MIN = 0.7;
   const FONT_SCALE_MAX = 1.6;
-  const FONT_SCALE_STEP = 0.1;
+  const FONT_SCALE_STEP = 0.01;
   const FONT_SCALE_BASE_PX = 13;
 
   function songFontScale(song){
